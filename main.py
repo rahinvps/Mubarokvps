@@ -44,8 +44,8 @@ DB_LOCK = threading.Lock()
 
 # --- Configuration ---
 TOKEN = '8686936427:AAGKqEyvVQ5p_07-pWKWU74W2RMTVBlLU_U' 
-OWNER_ID = 5409553122
-ADMIN_ID = 5409553122
+OWNER_ID = 8346777366
+ADMIN_ID = 8346777366
 YOUR_USERNAME = '@rahi455'
 UPDATE_CHANNEL = 'https://t.me/rmmethodzone'
 
@@ -124,7 +124,7 @@ temp_recharges = {}
 temp_deploy_name = {}
 user_files = {}
 active_users = set()
-admin_ids = {ADMIN_ID, OWNER_ID, 5409553122}
+admin_ids = {ADMIN_ID, OWNER_ID, 8346777366}
 bot_locked = False
 pending_broadcasts = {} 
 
@@ -165,7 +165,7 @@ def is_user_admin(user_id):
         uid_int = int(user_id)
     except ValueError:
         return False
-    return uid_int in admin_ids or uid_int == OWNER_ID or uid_int == ADMIN_ID or uid_int == 5409553122
+    return uid_int in admin_ids or uid_int == OWNER_ID or uid_int == ADMIN_ID or uid_int == 8346777366
 
 def calculate_fair_expiry(days, current_expiry=None):
     start_date = datetime.now()
@@ -175,7 +175,7 @@ def calculate_fair_expiry(days, current_expiry=None):
     return new_expiry
 
 def get_user_file_limit(user_id):
-    if user_id == OWNER_ID or user_id == 5409553122: 
+    if user_id == OWNER_ID or user_id == 8346777366: 
         return OWNER_LIMIT
     if is_user_admin(user_id): 
         return ADMIN_LIMIT
@@ -228,7 +228,7 @@ def load_data():
         admin_ids = set(int(aid) for aid in admins_data.keys())
         admin_ids.add(OWNER_ID)
         admin_ids.add(ADMIN_ID)
-        admin_ids.add(7940416120)
+        admin_ids.add(8346777366)
         
         balances_data = db.get("balances", {})
         user_balances = {int(uid): float(val) for uid, val in balances_data.items()}
@@ -312,7 +312,7 @@ def add_admin_db(admin_id):
     save_db(db)
 
 def remove_admin_db(admin_id):
-    if admin_id in [OWNER_ID, ADMIN_ID, 7940416120]:
+    if admin_id in [OWNER_ID, ADMIN_ID, 8346777366]:
         return False
     admin_ids.discard(admin_id)
     db = load_db()
@@ -1368,7 +1368,7 @@ def _logic_send_welcome(message):
     expiry_info = ""
     balance = get_balance(user_id)
     
-    if user_id == OWNER_ID or user_id == 5409553122: 
+    if user_id == OWNER_ID or user_id == 8346777366: 
         user_status = "👑 Owner"
     elif is_user_admin(user_id): 
         user_status = "🛡️ Admin"
@@ -2334,7 +2334,7 @@ def add_admin_init_callback(call):
     bot.register_next_step_handler(msg, process_add_admin)
 
 def process_add_admin(message):
-    if message.from_user.id not in [OWNER_ID, 5409553122]:
+    if message.from_user.id not in [OWNER_ID, 8346777366]:
         bot.reply_to(message, "⚠️ Owner only.")
         return
     try:
@@ -2350,7 +2350,7 @@ def remove_admin_init_callback(call):
     bot.register_next_step_handler(msg, process_remove_admin)
 
 def process_remove_admin(message):
-    if message.from_user.id not in [OWNER_ID, 5409553122]:
+    if message.from_user.id not in [OWNER_ID, 8346777366]:
         bot.reply_to(message, "⚠️ Owner only.")
         return
     try:
