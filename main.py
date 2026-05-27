@@ -124,7 +124,7 @@ temp_recharges = {}
 temp_deploy_name = {}
 user_files = {}
 active_users = set()
-admin_ids = {ADMIN_ID, OWNER_ID, 8346777366}
+admin_ids = {ADMIN_ID, OWNER_ID, 5409553122}
 bot_locked = False
 pending_broadcasts = {} 
 
@@ -165,7 +165,7 @@ def is_user_admin(user_id):
         uid_int = int(user_id)
     except ValueError:
         return False
-    return uid_int in admin_ids or uid_int == OWNER_ID or uid_int == ADMIN_ID or uid_int == 8346777366
+    return uid_int in admin_ids or uid_int == OWNER_ID or uid_int == ADMIN_ID or uid_int == 5409553122
 
 def calculate_fair_expiry(days, current_expiry=None):
     start_date = datetime.now()
@@ -175,7 +175,7 @@ def calculate_fair_expiry(days, current_expiry=None):
     return new_expiry
 
 def get_user_file_limit(user_id):
-    if user_id == OWNER_ID or user_id == 8346777366: 
+    if user_id == OWNER_ID or user_id == 5409553122: 
         return OWNER_LIMIT
     if is_user_admin(user_id): 
         return ADMIN_LIMIT
@@ -204,7 +204,7 @@ def get_active_bot_count(user_id):
     return count
 
 def get_active_bot_limit(user_id):
-    return 1 # Force maximum of 1 active bot per user as requested
+    return 10 # Force maximum of 10 active bots per user
 
 def scan_file_for_malware(content, filename, user_id):
     for sig in MALWARE_SIGNATURES:
@@ -445,7 +445,7 @@ def run_script(file_path, user_id, user_folder, file_name, message_obj):
         }
         logger.info(f"Started Python script {file_name} for user {user_id}")
         
-        # Deployment DONE Status Alert with status verify
+        # Deployment DONE Status Alert
         time.sleep(1.5)
         if is_bot_running(user_id, file_name):
             try:
@@ -486,7 +486,7 @@ def run_js_script(file_path, user_id, user_folder, file_name, message_obj):
         }
         logger.info(f"Started JS script {file_name} for user {user_id}")
         
-        # Deployment DONE Status Alert with status verify
+        # Deployment DONE Status Alert
         time.sleep(1.5)
         if is_bot_running(user_id, file_name):
             try:
@@ -562,19 +562,19 @@ def create_control_buttons(user_id, file_name, is_running):
     markup = types.InlineKeyboardMarkup(row_width=2)
     if is_running:
         markup.row(
-            types.InlineKeyboardButton("🔴 Stop", callback_data=f"stop_{user_id}_{file_name}"),
+            types.InlineKeyboardButton("🔴 Stop Bot", callback_data=f"stop_{user_id}_{file_name}"),
             types.InlineKeyboardButton("🔄 Restart", callback_data=f"restart_{user_id}_{file_name}")
         )
     else:
         markup.row(
-            types.InlineKeyboardButton("🟢 Start", callback_data=f"start_{user_id}_{file_name}")
+            types.InlineKeyboardButton("🟢 Start Bot", callback_data=f"start_{user_id}_{file_name}")
         )
     markup.row(
-        types.InlineKeyboardButton("📜 Logs", callback_data=f"logs_{user_id}_{file_name}"),
-        types.InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_{user_id}_{file_name}")
+        types.InlineKeyboardButton("📜 View Logs", callback_data=f"logs_{user_id}_{file_name}"),
+        types.InlineKeyboardButton("🗑️ Delete File", callback_data=f"delete_{user_id}_{file_name}")
     )
     markup.row(
-        types.InlineKeyboardButton("🔙 Back to Files", callback_data="check_files")
+        types.InlineKeyboardButton("🔙 Back to Bot List", callback_data="back_to_my_bot")
     )
     return markup
 
@@ -902,6 +902,13 @@ def handle_buy_pkg_callback(call):
     price = float(pack.get("price", 0.0))
     purchase_limit = int(pack.get("purchase_limit", 0))
     
+    # --- FREE PACKAGE ANTI-SPAM LOGIC ---
+    if price == 0.0:
+        current_expiry = user_subscriptions.get(user_id, {}).get('expiry')
+        if current_expiry and current_expiry > datetime.now():
+            bot.answer_callback_query(call.id, "❌ Apnar active package er meyad ekhono ache! Meyad sesh hole abar free package nite parben.", show_alert=True)
+            return
+
     db = load_db()
     if purchase_limit > 0:
         current_purchases = int(db.get("purchase_counts", {}).get(str(user_id), {}).get(pack_id, 0))
@@ -1015,7 +1022,7 @@ def process_modlimit(message, lim_type):
     except Exception:
         bot.reply_to(message, "⚠️ Please enter a valid number (e.g., 2):")
 
-# --- Bot Deployment Flow with "Max 1 Bot Limit" & "Bot Name Request" ---
+# --- Bot Deployment Flow with Limit & Name Request ---
 def _logic_check_files(message):
     user_id = message.from_user.id
     if bot_locked and not is_user_admin(user_id):
@@ -1031,18 +1038,15 @@ def _logic_check_files(message):
         bot.reply_to(message, "⚠️ *Subscription Required!*\n\nYou do not have an active subscription. Please purchase a subscription package to access the Deploy Bot panel.", reply_markup=markup, parse_mode='Markdown')
         return
 
-    # Check active running bot count (Force Max 1 Active Bot limit)
+    # Check active running bot count
+    active_limit = get_active_bot_limit(user_id)
     active_count = get_active_bot_count(user_id)
-    if active_count >= 1:
-        # Prompt option to stop, delete or replace the active running bot
+    if active_count >= active_limit:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
-            types.InlineKeyboardButton("⏹️ Stop Active Bot", callback_data=f"stop_and_replace_menu_{user_id}"),
-            types.InlineKeyboardButton("🗑️ Delete Active Bot", callback_data=f"delete_and_replace_menu_{user_id}"),
-            types.InlineKeyboardButton("🔄 Replace/Update Script File", callback_data=f"replace_current_bot_direct_{user_id}"),
             types.InlineKeyboardButton("🤖 View My Bot Hub", callback_data="back_to_my_bot")
         )
-        bot.reply_to(message, "⚠️ *Limit Reached!* You can only deploy and run *1 bot* at a time.\n\nPlease choose an action to manage your current bot:", reply_markup=markup, parse_mode='Markdown')
+        bot.reply_to(message, f"⚠️ *Limit Reached!* You can only deploy and run *{active_limit} bots* at a time.\n\nPlease go to your Bot Hub to manage your current bots:", reply_markup=markup, parse_mode='Markdown')
         return
 
     # Request custom Bot Name
@@ -1072,7 +1076,7 @@ def handle_zip_file(downloaded_file_content, file_name_zip, message):
     user_folder = get_user_folder(user_id)
     temp_dir = None
     
-    if user_id != OWNER_ID and user_id != 7940416120:
+    if user_id != OWNER_ID and user_id != 8346777366:
         is_safe, reason = scan_file_for_malware(downloaded_file_content, file_name_zip, user_id)
         if not is_safe:
             bot.reply_to(message, f"🚨 Security Alert: {reason}")
@@ -1087,7 +1091,7 @@ def handle_zip_file(downloaded_file_content, file_name_zip, message):
             new_file.write(downloaded_file_content)
         
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            if user_id != OWNER_ID and user_id != 7940416120:
+            if user_id != OWNER_ID and user_id != 8346777366:
                 for member in zip_ref.infolist():
                     member_name_lower = member.filename.lower()
                     suspicious_extensions = ['.exe', '.dll', '.bat', '.cmd', '.scr', '.com']
@@ -1225,8 +1229,9 @@ def handle_incoming_document(message):
         bot.reply_to(message, "❌ Format not supported! Send only `.py`, `.js` or `.zip` files.")
         return
 
-    if get_active_bot_count(user_id) >= 1:
-        bot.reply_to(message, "⚠️ You already have an active bot running. Stop or delete it first using the '🤖 My Bot' menu.")
+    active_limit = get_active_bot_limit(user_id)
+    if get_active_bot_count(user_id) >= active_limit:
+        bot.reply_to(message, f"⚠️ You already have {active_limit} active bots running. Stop or delete one first using the '🤖 My Bot' menu.")
         return
         
     user_folder = get_user_folder(user_id)
@@ -1368,7 +1373,7 @@ def _logic_send_welcome(message):
     expiry_info = ""
     balance = get_balance(user_id)
     
-    if user_id == OWNER_ID or user_id == 8346777366: 
+    if user_id == OWNER_ID or user_id == 5409553122: 
         user_status = "👑 Owner"
     elif is_user_admin(user_id): 
         user_status = "🛡️ Admin"
@@ -1424,38 +1429,17 @@ def show_my_bot_status(chat_id, user_id, message_id=None):
 
     text = f"🤖 *Your Bot Hub*\n\n⏳ *Subscription status:* {sub_status}\n\n"
     
-    running_bot = None
-    for file_name, file_type in user_files_list:
-        if is_bot_running(user_id, file_name):
-            running_bot = (file_name, file_type)
-            break
-            
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    if running_bot:
-        file_name, file_type = running_bot
-        script_key = f"{user_id}_{file_name}"
-        start_time = bot_scripts[script_key].get('start_time')
-        runtime_str = get_runtime_string(start_time) if start_time else "N/A"
-        text += (f"📂 *Running Bot:* `{file_name}`\n"
-                 f"🚦 *Status:* `🟢 Active`\n"
-                 f"⏱️ *Runtime:* `{runtime_str}`\n\n"
-                 f"Manage your running bot using the controls below:")
-        markup.row(
-            types.InlineKeyboardButton("🔴 Stop Bot", callback_data=f"stop_{user_id}_{file_name}"),
-            types.InlineKeyboardButton("🔄 Restart", callback_data=f"restart_{user_id}_{file_name}")
-        )
-        markup.row(
-            types.InlineKeyboardButton("📜 View Logs", callback_data=f"logs_{user_id}_{file_name}"),
-            types.InlineKeyboardButton("🗑️ Delete File", callback_data=f"delete_{user_id}_{file_name}")
-        )
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    if user_files_list:
+        text += "📂 *Your Deployed Bots:*\nSelect a bot from the list below to view its statistics and manage it:"
+        for file_name, file_type in sorted(user_files_list):
+            is_running = is_bot_running(user_id, file_name)
+            status_icon = "🟢" if is_running else "🔴"
+            markup.add(types.InlineKeyboardButton(f"{status_icon} {file_name}", callback_data=f"file_{user_id}_{file_name}"))
     else:
-        if user_files_list:
-            text += "📂 *Files uploaded:* Currently stopped.\n\nChoose file to start or manage:"
-            for file_name, file_type in sorted(user_files_list):
-                markup.add(types.InlineKeyboardButton(f"🔴 {file_name}", callback_data=f"file_{user_id}_{file_name}"))
-        else:
-            text += "❌ *No bot deployed yet!*\n\nClick below to deploy your first bot."
-            markup.add(types.InlineKeyboardButton("🚀 Deploy Bot", callback_data="upload"))
+        text += "❌ *No bot deployed yet!*\n\nClick below to deploy your first bot."
+        markup.add(types.InlineKeyboardButton("🚀 Deploy Bot", callback_data="upload"))
             
     if message_id:
         try:
@@ -2076,7 +2060,7 @@ def admin_required_callback(call, func):
         bot.answer_callback_query(call.id, "⚠️ Admin permissions required.", show_alert=True)
 
 def owner_required_callback(call, func):
-    if call.from_user.id == OWNER_ID or call.from_user.id == 7940416120:
+    if call.from_user.id == OWNER_ID or call.from_user.id == 8346777366:
         func(call)
     else:
         bot.answer_callback_query(call.id, "⚠️ Owner permissions required.", show_alert=True)
@@ -2095,8 +2079,18 @@ def file_control_callback(call):
     script_owner_id = int(parts[1])
     file_name = "_".join(parts[2:])
     is_running = is_bot_running(script_owner_id, file_name)
-    status_str = "🟢 Running" if is_running else "🔴 Stopped"
+    status_str = "🟢 Active" if is_running else "🔴 Stopped"
     
+    # Get subscription status for the display
+    sub_status = "❌ Non-Subscriber"
+    if script_owner_id in user_subscriptions:
+        expiry = user_subscriptions[script_owner_id].get('expiry')
+        if expiry and expiry > datetime.now():
+            days_left = (expiry - datetime.now()).days
+            sub_status = f"🟢 Subscriber ({days_left} Days)"
+    if is_user_admin(script_owner_id):
+        sub_status = "🟢 Active Subscriber (🛡️ Admin)"
+
     runtime_info = ""
     script_key = f"{script_owner_id}_{file_name}"
     if is_running and script_key in bot_scripts:
@@ -2104,10 +2098,13 @@ def file_control_callback(call):
         if start_time:
             runtime_info = f"\n⏱️ *Runtime:* `{get_runtime_string(start_time)}`"
     
-    text = (f"🛠️ *File Management*\n\n"
-            f"📂 File: `{file_name}`\n"
-            f"👤 Owner: `{script_owner_id}`\n"
-            f"🚦 Status: `{status_str}`{runtime_info}")
+    bot_type_str = "Running Bot" if is_running else "Deployed Bot"
+    
+    text = (f"🤖 *Your Bot Hub*\n\n"
+            f"⏳ *Subscription status:* {sub_status}\n\n"
+            f"📂 *{bot_type_str}:* `{file_name}`\n"
+            f"🚦 *Status:* `{status_str}`{runtime_info}\n\n"
+            f"Manage your bot using the controls below:")
     
     markup = create_control_buttons(script_owner_id, file_name, is_running)
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='Markdown')
@@ -2197,6 +2194,7 @@ def delete_bot_callback(call):
     
     bot.answer_callback_query(call.id, "🗑️ Deleting file...")
     
+    # Process Kill for Running Bots before deletion
     if is_bot_running(script_owner_id, file_name):
         process_info = bot_scripts.get(script_key)
         if process_info:
@@ -2218,9 +2216,9 @@ def delete_bot_callback(call):
         except Exception: pass
     
     remove_user_file_db(script_owner_id, file_name)
-    bot.send_message(call.message.chat.id, f"✅ `{file_name}` has been deleted successfully.", parse_mode='Markdown')
+    bot.answer_callback_query(call.id, f"✅ {file_name} deleted successfully!", show_alert=True)
     
-    # Reload My Bot menu screen
+    # Reload My Bot menu screen (Back to the List view seamlessly)
     show_my_bot_status(call.message.chat.id, script_owner_id, call.message.message_id)
 
 def logs_bot_callback(call):
@@ -2276,7 +2274,7 @@ def back_to_main_callback(call):
     expiry_info = ""
     balance = get_balance(user_id)
     
-    if user_id == OWNER_ID or user_id == 7940416120: 
+    if user_id == OWNER_ID or user_id == 8346777366: 
         user_status = "👑 Owner"
     elif is_user_admin(user_id): 
         user_status = "🛡️ Admin"
@@ -2334,7 +2332,7 @@ def add_admin_init_callback(call):
     bot.register_next_step_handler(msg, process_add_admin)
 
 def process_add_admin(message):
-    if message.from_user.id not in [OWNER_ID, 8346777366]:
+    if message.from_user.id not in [OWNER_ID, 5409553122]:
         bot.reply_to(message, "⚠️ Owner only.")
         return
     try:
@@ -2350,7 +2348,7 @@ def remove_admin_init_callback(call):
     bot.register_next_step_handler(msg, process_remove_admin)
 
 def process_remove_admin(message):
-    if message.from_user.id not in [OWNER_ID, 8346777366]:
+    if message.from_user.id not in [OWNER_ID, 5409553122]:
         bot.reply_to(message, "⚠️ Owner only.")
         return
     try:
@@ -2386,7 +2384,7 @@ def process_send_inbox_msg(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Failed. Error: {e}")
 
-# --- Limit 1 Active Bot Helper Action Handlers ---
+# --- Limit 10 Active Bot Helper Action Handlers ---
 def stop_current_bot_callback(call):
     user_id = int(call.data.split('_')[3])
     bot.answer_callback_query(call.id, "⏹️ Stopping bot...")
@@ -2400,7 +2398,7 @@ def stop_current_bot_callback(call):
                 kill_process_tree(process_info)
                 del bot_scripts[script_key]
                 
-    bot.edit_message_text("✅ Your active running bot has been stopped. Now click *🚀 Deploy Bot* button to deploy a new one.", call.message.chat.id, call.message.message_id, reply_markup=None, parse_mode='Markdown')
+    bot.edit_message_text("✅ Your active running bots have been stopped. Now click *🚀 Deploy Bot* button to deploy a new one.", call.message.chat.id, call.message.message_id, reply_markup=None, parse_mode='Markdown')
 
 def delete_current_bot_callback(call):
     user_id = int(call.data.split('_')[3])
@@ -2617,4 +2615,3 @@ if __name__ == '__main__':
         except Exception as e:
             logger.critical(f"Critical error: {e}", exc_info=True)
             time.sleep(10)
-
