@@ -1965,7 +1965,7 @@ def _logic_send_welcome(message):
     else: 
         user_status = "Non-Subscriber"
 
-    welcome_msg_text = (f"💠 <b>WELCOME TO MINO BOT HOSTING</b> 💠\n"
+    welcome_msg_text = (f"💠 <b>WELCOME TO RAHIN BOT HOSTING</b> 💠\n"
                         f"────────────────────────\n"
                         f"👤 <b>USER ID:</b> <code>{user_id}</code>\n"
                         f"✳️ <b>USERNAME:</b> <code>@{user_username}</code>\n"
