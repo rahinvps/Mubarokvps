@@ -42,7 +42,7 @@ import psycopg2  # Supabase Postgres Connection
 import ast       # Added for dynamic auto-dependency parser
 
 # --- Configuration ---
-TOKEN = '8957896268:AAHXY9atOcCezfwedI-C-jQogBwDy8vpQaw' 
+TOKEN = '8957896268:AAFGTYeNWNp9oVTr4iD-caZsDIP-Bkocpbs' 
 OWNER_ID = 5409553122
 ADMIN_ID = 5409553122
 YOUR_USERNAME = '@rahi455'
