@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot is successfully running on Render! Mino Sms File Host"
+    return "Bot is successfully running on Render! Rahin File Host"
 
 def run_server():
     port = int(os.environ.get("PORT", 8080))
@@ -38,16 +38,18 @@ import atexit
 import hashlib
 import mimetypes
 import struct
-
-# Thread Lock for Database operations
-DB_LOCK = threading.Lock()
+import psycopg2  # Supabase Postgres Connection
+import ast       # Added for dynamic auto-dependency parser
 
 # --- Configuration ---
-TOKEN = '8686936427:AAGKqEyvVQ5p_07-pWKWU74W2RMTVBlLU_U' 
-OWNER_ID = 8346777366
-ADMIN_ID = 8346777366
+TOKEN = '8957896268:AAHXY9atOcCezfwedI-C-jQogBwDy8vpQaw' 
+OWNER_ID = 5409553122
+ADMIN_ID = 5409553122
 YOUR_USERNAME = '@rahi455'
 UPDATE_CHANNEL = 'https://t.me/rmmethodzone'
+
+# --- SUPABASE POSTGRESQL CONNECTION ---
+DB_URI = "postgresql://postgres:Rahin12@@##@db.gcgxxhwkehwtdoeilbah.supabase.co:5432/postgres"
 
 # Folder setup - using absolute paths
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -56,7 +58,7 @@ IROTECH_DIR = os.path.join(BASE_DIR, 'inf')
 
 # File upload limits
 OWNER_LIMIT = float('inf')
-ADMIN_LIMIT = 999
+ADMIN_LIMIT = float('inf')
 
 # Create necessary directories
 os.makedirs(UPLOAD_BOTS_DIR, exist_ok=True)
@@ -71,50 +73,106 @@ try:
 except Exception as e:
     print(f"Webhook cleanup note: {e}")
 
-# --- Local JSON Database System ---
-DB_FILE = os.path.join(BASE_DIR, 'database.json')
+# --- PostgreSQL Connection & Table Initializer ---
+def get_db_connection():
+    return psycopg2.connect(DB_URI)
 
-def load_db():
-    with DB_LOCK:
-        if not os.path.exists(DB_FILE):
-            default_data = {
-                "active_users": {},
-                "admins": {str(OWNER_ID): True, str(ADMIN_ID): True},
-                "balances": {},
-                "subscriptions": {},
-                "user_files": {},
-                "packages": {
-                    "1": {"name": "1 Day VPS Plan", "days": 1, "price": 15.0, "purchase_limit": 0},
-                    "2": {"name": "7 Days VPS Plan", "days": 7, "price": 49.0, "purchase_limit": 0},
-                    "3": {"name": "30 Days VPS Plan", "days": 30, "price": 149.0, "purchase_limit": 0}
-                },
-                "settings": {
-                    "non_sub_limit": "0",
-                    "sub_limit": "2",
-                    "sales_status": "ON"
-                },
-                "deposits": {},
-                "purchase_counts": {}
-            }
-            with open(DB_FILE, 'w', encoding='utf-8') as f:
-                json.dump(default_data, f, indent=4)
-            return default_data
-        try:
-            with open(DB_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Error loading JSON DB: {e}")
-            return {}
-
-def save_db(data):
-    with DB_LOCK:
-        try:
-            with open(DB_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4)
-            return True
-        except Exception as e:
-            print(f"Error saving JSON DB: {e}")
-            return False
+def init_db():
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Create Tables
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS active_users (
+            user_id BIGINT PRIMARY KEY,
+            username TEXT,
+            join_date TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS admins (
+            admin_id BIGINT PRIMARY KEY
+        );
+        CREATE TABLE IF NOT EXISTS balances (
+            user_id BIGINT PRIMARY KEY,
+            balance DOUBLE PRECISION DEFAULT 0.0
+        );
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            user_id BIGINT PRIMARY KEY,
+            expiry TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS user_files (
+            user_id BIGINT,
+            file_name TEXT,
+            file_type TEXT,
+            upload_time TIMESTAMP,
+            PRIMARY KEY (user_id, file_name)
+        );
+        CREATE TABLE IF NOT EXISTS packages (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            days INT,
+            price DOUBLE PRECISION,
+            purchase_limit INT DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+        CREATE TABLE IF NOT EXISTS deposits (
+            id TEXT PRIMARY KEY,
+            user_id BIGINT,
+            amount DOUBLE PRECISION,
+            status TEXT,
+            screenshot_file_id TEXT,
+            recipient_number TEXT,
+            send_time TEXT,
+            method TEXT
+        );
+        CREATE TABLE IF NOT EXISTS purchase_counts (
+            user_id BIGINT,
+            pack_id TEXT,
+            count INT,
+            PRIMARY KEY (user_id, pack_id)
+        );
+        CREATE TABLE IF NOT EXISTS user_directory_files (
+            user_id BIGINT,
+            file_path TEXT,
+            file_data BYTEA,
+            PRIMARY KEY (user_id, file_path)
+        );
+        """)
+        conn.commit()
+        
+        # Seed default packages if table is empty
+        cur.execute("SELECT COUNT(*) FROM packages;")
+        if cur.fetchone()[0] == 0:
+            cur.execute("""
+            INSERT INTO packages (id, name, days, price, purchase_limit) VALUES
+            ('1', '1 Day VPS Plan', 1, 15.0, 0),
+            ('2', '7 Days VPS Plan', 7, 49.0, 0),
+            ('3', '30 Days VPS Plan', 30, 149.0, 0);
+            """)
+            conn.commit()
+            
+        # Seed default settings if empty
+        cur.execute("SELECT COUNT(*) FROM settings;")
+        if cur.fetchone()[0] == 0:
+            cur.execute("""
+            INSERT INTO settings (key, value) VALUES
+            ('non_sub_limit', '0'),
+            ('sub_limit', '3'),
+            ('sales_status', 'ON'),
+            ('recharge_status', 'ON');
+            """)
+            conn.commit()
+            
+        cur.close()
+    except Exception as e:
+        print(f"Error initializing Supabase DB: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 # --- Cache Structures ---
 bot_scripts = {}
@@ -124,13 +182,9 @@ temp_recharges = {}
 temp_deploy_name = {}
 user_files = {}
 active_users = set()
-admin_ids = {ADMIN_ID, OWNER_ID, 5409553122}
+admin_ids = {ADMIN_ID, OWNER_ID}
 bot_locked = False
 pending_broadcasts = {} 
-
-# --- Malware Detection Configuration ---
-MALWARE_SIGNATURES = [b'MZ']
-SUSPICIOUS_KEYWORDS = [b'rootkit']
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO,
@@ -165,7 +219,7 @@ def is_user_admin(user_id):
         uid_int = int(user_id)
     except ValueError:
         return False
-    return uid_int in admin_ids or uid_int == OWNER_ID or uid_int == ADMIN_ID or uid_int == 5409553122
+    return uid_int in admin_ids or uid_int == OWNER_ID or uid_int == ADMIN_ID
 
 def calculate_fair_expiry(days, current_expiry=None):
     start_date = datetime.now()
@@ -175,19 +229,17 @@ def calculate_fair_expiry(days, current_expiry=None):
     return new_expiry
 
 def get_user_file_limit(user_id):
-    if user_id == OWNER_ID or user_id == 5409553122: 
+    if user_id == OWNER_ID or is_user_admin(user_id): 
         return OWNER_LIMIT
-    if is_user_admin(user_id): 
-        return ADMIN_LIMIT
     if has_active_subscription(user_id):
-        return int(get_setting("sub_limit", "2"))
+        return int(get_setting("sub_limit", "3"))
     return int(get_setting("non_sub_limit", "0"))
 
 def get_user_file_count(user_id):
     return len(user_files.get(user_id, []))
 
 def has_active_subscription(user_id):
-    if is_user_admin(user_id):
+    if is_user_admin(user_id) or user_id == OWNER_ID:
         return True
     if user_id in user_subscriptions:
         expiry = user_subscriptions[user_id].get('expiry')
@@ -204,143 +256,655 @@ def get_active_bot_count(user_id):
     return count
 
 def get_active_bot_limit(user_id):
-    return 10 # Force maximum of 10 active bots per user
+    if is_user_admin(user_id) or user_id == OWNER_ID:
+        return float('inf') 
+    return 3 
 
-def scan_file_for_malware(content, filename, user_id):
-    for sig in MALWARE_SIGNATURES:
-        if sig in content:
-            return False, f"Malware signature detected ({sig.decode('utf-8', errors='ignore')})"
-    for kw in SUSPICIOUS_KEYWORDS:
-        if kw in content:
-            return False, f"Suspicious keyword detected ({kw.decode('utf-8', errors='ignore')})"
-    return True, ""
+# --- Dynamic Auto-Dependency Installer Helpers ---
+def auto_install_python_deps(file_path, user_folder, user_id):
+    """Parses Python file imports and automatically runs pip install for missing packages."""
+    imports = set()
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for name in node.names:
+                    imports.add(name.name.split('.')[0])
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    imports.add(node.module.split('.')[0])
+    except Exception:
+        # Fallback to Regex parser if AST fails due to syntax error
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    match1 = re.match(r'^\s*import\s+([a-zA-Z0-9_]+)', line)
+                    match2 = re.match(r'^\s*from\s+([a-zA-Z0-9_]+)', line)
+                    if match1:
+                        imports.add(match1.group(1))
+                    elif match2:
+                        imports.add(match2.group(1))
+        except Exception:
+            pass
+
+    # Built-in Python Standard Libraries to avoid trying to install
+    STDLIB_MODULES = {
+        'os', 'sys', 'time', 're', 'json', 'math', 'random', 'datetime', 'threading',
+        'subprocess', 'shutil', 'tempfile', 'zipfile', 'logging', 'signal', 'struct',
+        'hashlib', 'mimetypes', 'socket', 'urllib', 'collections', 'itertools', 'functools',
+        'traceback', 'asyncio', 'select', 'platform', 'uuid', 'base64', 'csv', 'ast',
+        'typing', 'pathlib', 'atexit', 'inspect', 'copy', 'glob', 'pickle', 'weakref',
+        'gc', 'abc', 'contextlib', 'argparse', 'importlib', 'xml', 'html', 'http', 'ctypes',
+        'trace', 'string', 'io', 'errno', 'stat', 'fnmatch', 'warnings', 'sqlite3'
+    }
+
+    # Import Name to PyPI Package Name Mapping
+    MODULE_MAPPING = {
+        'telebot': 'pyTelegramBotAPI',
+        'telegram': 'python-telegram-bot',
+        'PIL': 'Pillow',
+        'bs4': 'beautifulsoup4',
+        'pg': 'postgresql',
+        'mysql': 'mysql-connector-python'
+    }
+
+    packages_to_install = []
+    for imp in imports:
+        if imp in STDLIB_MODULES:
+            continue
+        pkg = MODULE_MAPPING.get(imp, imp)
+        if pkg:
+            packages_to_install.append(pkg)
+
+    if packages_to_install:
+        logger.info(f"Auto-installing detected Python packages for User {user_id}: {packages_to_install}")
+        try:
+            bot.send_message(user_id, f"🔄 *Auto-installing required packages:* `{', '.join(packages_to_install)}`...", parse_mode='Markdown')
+        except Exception:
+            pass
+
+        for pkg in packages_to_install:
+            try:
+                subprocess.run(
+                    [sys.executable, '-m', 'pip', 'install', pkg],
+                    capture_output=True, text=True, check=True, timeout=60
+                )
+            except Exception as e:
+                logger.error(f"Failed to auto-install package {pkg}: {e}")
+
+def auto_install_js_deps(file_path, user_folder, user_id):
+    """Parses Node JS file requirements and automatically runs npm install for missing packages."""
+    imports = set()
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        req_matches = re.findall(r'require\s*\(\s*[\'"]([@a-zA-Z0-9_\-\/]+)[\'"]\s*\)', content)
+        import_matches = re.findall(r'from\s+[\'"]([@a-zA-Z0-9_\-\/]+)[\'"]', content)
+        import_fn_matches = re.findall(r'import\s*\(\s*[\'"]([@a-zA-Z0-9_\-\/]+)[\'"]\s*\)', content)
+        
+        for pkg in req_matches + import_matches + import_fn_matches:
+            if pkg.startswith('@'):
+                parts = pkg.split('/')
+                if len(parts) >= 2:
+                    imports.add(f"{parts[0]}/{parts[1]}")
+            else:
+                imports.add(pkg.split('/')[0])
+    except Exception:
+        pass
+
+    NODE_BUILTINS = {
+        'fs', 'path', 'http', 'https', 'crypto', 'os', 'child_process', 'events',
+        'util', 'stream', 'dns', 'net', 'url', 'querystring', 'zlib', 'assert',
+        'buffer', 'cluster', 'constants', 'readline', 'repl', 'tls', 'vm'
+    }
+
+    packages_to_install = [pkg for pkg in imports if pkg not in NODE_BUILTINS]
+
+    if packages_to_install:
+        logger.info(f"Auto-installing detected JS packages for User {user_id}: {packages_to_install}")
+        try:
+            bot.send_message(user_id, f"🔄 *Auto-installing required npm packages:* `{', '.join(packages_to_install)}`...", parse_mode='Markdown')
+        except Exception:
+            pass
+
+        for pkg in packages_to_install:
+            try:
+                subprocess.run(
+                    ['npm', 'install', pkg],
+                    cwd=user_folder, capture_output=True, text=True, check=True, timeout=120
+                )
+            except Exception as e:
+                logger.error(f"Failed to auto-install npm package {pkg}: {e}")
+
+# --- Database Persistent File Sync System ---
+def save_user_file(user_id, file_name, file_type):
+    """Saves user file metadata to database and updates local memory cache."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO user_files (user_id, file_name, file_type, upload_time)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (user_id, file_name) 
+            DO UPDATE SET file_type = EXCLUDED.file_type, upload_time = EXCLUDED.upload_time;
+        """, (user_id, file_name, file_type, datetime.now()))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in save_user_file database query: {e}")
+    finally:
+        if conn:
+            conn.close()
+            
+    # Update local memory cache
+    if user_id not in user_files:
+        user_files[user_id] = []
+    user_files[user_id] = [f for f in user_files[user_id] if f[0] != file_name]
+    user_files[user_id].append((file_name, file_type))
+
+def save_file_to_db(user_id, file_path_on_disk):
+    user_folder = get_user_folder(user_id)
+    relative_path = os.path.relpath(file_path_on_disk, user_folder)
+    conn = None
+    try:
+        if not os.path.exists(file_path_on_disk) or os.path.isdir(file_path_on_disk):
+            return
+        with open(file_path_on_disk, 'rb') as f:
+            file_data = f.read()
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO user_directory_files (user_id, file_path, file_data)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, file_path) DO UPDATE SET file_data = EXCLUDED.file_data;
+        """, (user_id, relative_path, psycopg2.Binary(file_data)))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error saving file {relative_path} to Supabase: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def save_user_folder_to_db(user_id):
+    user_folder = get_user_folder(user_id)
+    for root, dirs, files in os.walk(user_folder):
+        for file in files:
+            file_path = os.path.join(root, file)
+            save_file_to_db(user_id, file_path)
+
+def delete_file_from_db(user_id, relative_path):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM user_directory_files WHERE user_id = %s AND file_path = %s;", (user_id, relative_path))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error deleting file {relative_path} from Supabase: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def delete_all_user_files_from_db(user_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM user_directory_files WHERE user_id = %s;", (user_id,))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error deleting all files of user {user_id} from Supabase: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def restore_all_files_from_db():
+    logger.info("Restoring persistent user directory files from Supabase PostgreSQL...")
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, file_path, file_data FROM user_directory_files;")
+        rows = cur.fetchall()
+        for row in rows:
+            user_id, file_path, file_data = row
+            user_folder = get_user_folder(user_id)
+            dest_path = os.path.join(user_folder, file_path)
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            with open(dest_path, 'wb') as f:
+                f.write(bytes(file_data) if isinstance(file_data, memoryview) else file_data)
+        cur.close()
+        logger.info("All user directory files successfully restored on local disk.")
+    except Exception as e:
+        logger.error(f"Error restoring files from Supabase: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 # --- Database Sync Helpers ---
 def load_data():
-    logger.info("Syncing database.json...")
+    logger.info("Syncing PostgreSQL database...")
     global active_users, admin_ids, user_balances, user_subscriptions, user_files
+    init_db()  
+    
+    # Restore persistent deployment files to local filesystem
+    restore_all_files_from_db()
+    
+    conn = None
     try:
-        db = load_db()
-        users_data = db.get("active_users", {})
-        active_users = set(int(uid) for uid in users_data.keys())
+        conn = get_db_connection()
+        cur = conn.cursor()
         
-        admins_data = db.get("admins", {})
-        admin_ids = set(int(aid) for aid in admins_data.keys())
+        # Load active users
+        cur.execute("SELECT user_id FROM active_users;")
+        active_users = set(int(row[0]) for row in cur.fetchall())
+        
+        # Load admins
+        cur.execute("SELECT admin_id FROM admins;")
+        admin_ids = set(int(row[0]) for row in cur.fetchall())
         admin_ids.add(OWNER_ID)
         admin_ids.add(ADMIN_ID)
-        admin_ids.add(8346777366)
         
-        balances_data = db.get("balances", {})
-        user_balances = {int(uid): float(val) for uid, val in balances_data.items()}
+        # Load balances
+        cur.execute("SELECT user_id, balance FROM balances;")
+        user_balances = {int(row[0]): float(row[1]) for row in cur.fetchall()}
         
-        subs_data = db.get("subscriptions", {})
+        # Load subscriptions
+        cur.execute("SELECT user_id, expiry FROM subscriptions;")
         user_subscriptions = {}
-        for uid, sub_info in subs_data.items():
-            expiry_str = sub_info.get("expiry") if isinstance(sub_info, dict) else None
-            if expiry_str:
-                try:
-                    user_subscriptions[int(uid)] = {'expiry': datetime.fromisoformat(expiry_str)}
-                except Exception: pass
-                    
-        files_data = db.get("user_files", {})
-        user_files = {}
-        for uid, files in files_data.items():
-            user_files[int(uid)] = []
-            for esc_name, file_type in files.items():
-                orig_name = esc_name.replace('_dot_', '.').replace('_slash_', '/')
-                user_files[int(uid)].append((orig_name, file_type))
+        for row in cur.fetchall():
+            uid = int(row[0])
+            expiry = row[1]
+            if expiry:
+                user_subscriptions[uid] = {'expiry': expiry}
                 
-        logger.info("Database loaded successfully.")
+        # Load user_files
+        cur.execute("SELECT user_id, file_name, file_type FROM user_files;")
+        user_files = {}
+        for row in cur.fetchall():
+            uid = int(row[0])
+            file_name = row[1]
+            file_type = row[2]
+            if uid not in user_files:
+                user_files[uid] = []
+            user_files[uid].append((file_name, file_type))
+            
+        cur.close()
+        logger.info("Database loaded successfully from Supabase.")
     except Exception as e:
-        logger.error(f"❌ Error loading database: {e}", exc_info=True)
+        logger.error(f"❌ Error loading database from Supabase: {e}", exc_info=True)
+    finally:
+        if conn:
+            conn.close()
 
 load_data()
 
 def get_all_packages():
-    db = load_db()
-    return db.get("packages", {})
-
-def save_user_file(user_id, file_name, file_type='py'):
-    db = load_db()
-    uid_str = str(user_id)
-    if "user_files" not in db: db["user_files"] = {}
-    if uid_str not in db["user_files"]: db["user_files"][uid_str] = {}
-    escaped_name = file_name.replace('.', '_dot_').replace('/', '_slash_')
-    db["user_files"][uid_str][escaped_name] = file_type
-    save_db(db)
-    
-    if user_id not in user_files: user_files[user_id] = []
-    user_files[user_id] = [(fn, ft) for fn, ft in user_files[user_id] if fn != file_name]
-    user_files[user_id].append((file_name, file_type))
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, days, price, purchase_limit FROM packages;")
+        rows = cur.fetchall()
+        packs = {}
+        for r in rows:
+            packs[r[0]] = {
+                "name": r[1],
+                "days": r[2],
+                "price": float(r[3]),
+                "purchase_limit": r[4]
+            }
+        cur.close()
+        return packs
+    except Exception as e:
+        logger.error(f"Error in get_all_packages: {e}")
+        return {}
+    finally:
+        if conn:
+            conn.close()
 
 def remove_user_file_db(user_id, file_name):
-    db = load_db()
-    uid_str = str(user_id)
-    escaped_name = file_name.replace('.', '_dot_').replace('/', '_slash_')
-    if "user_files" in db and uid_str in db["user_files"] and escaped_name in db["user_files"][uid_str]:
-        del db["user_files"][uid_str][escaped_name]
-        save_db(db)
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM user_files WHERE user_id = %s AND file_name = %s;", (user_id, file_name))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in remove_user_file_db: {e}")
+    finally:
+        if conn:
+            conn.close()
+            
     if user_id in user_files:
         user_files[user_id] = [f for f in user_files[user_id] if f[0] != file_name]
         if not user_files[user_id]: del user_files[user_id]
 
 def add_active_user(user_id, username="N/A"):
     active_users.add(user_id)
-    db = load_db()
-    if "active_users" not in db: db["active_users"] = {}
-    db["active_users"][str(user_id)] = username
-    save_db(db)
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO active_users (user_id, username, join_date)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username;
+        """, (user_id, username, datetime.now()))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in add_active_user: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 def save_subscription(user_id, expiry):
-    expiry_str = expiry.isoformat()
-    db = load_db()
-    db["subscriptions"][str(user_id)] = {"expiry": expiry_str}
-    save_db(db)
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO subscriptions (user_id, expiry)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET expiry = EXCLUDED.expiry;
+        """, (user_id, expiry))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in save_subscription: {e}")
+    finally:
+        if conn:
+            conn.close()
     user_subscriptions[user_id] = {'expiry': expiry}
 
 def remove_subscription_db(user_id):
-    db = load_db()
-    if str(user_id) in db.get("subscriptions", {}):
-        del db["subscriptions"][str(user_id)]
-        save_db(db)
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM subscriptions WHERE user_id = %s;", (user_id,))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in remove_subscription_db: {e}")
+    finally:
+        if conn:
+            conn.close()
     if user_id in user_subscriptions: del user_subscriptions[user_id]
 
 def add_admin_db(admin_id):
     admin_ids.add(admin_id)
-    db = load_db()
-    db["admins"][str(admin_id)] = True
-    save_db(db)
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO admins (admin_id) VALUES (%s) ON CONFLICT (admin_id) DO NOTHING;", (admin_id,))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in add_admin_db: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 def remove_admin_db(admin_id):
-    if admin_id in [OWNER_ID, ADMIN_ID, 8346777366]:
+    if admin_id in [OWNER_ID, ADMIN_ID]:
         return False
     admin_ids.discard(admin_id)
-    db = load_db()
-    if str(admin_id) in db.get("admins", {}):
-        del db["admins"][str(admin_id)]
-        save_db(db)
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM admins WHERE admin_id = %s;", (admin_id,))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in remove_admin_db: {e}")
+    finally:
+        if conn:
+            conn.close()
     return True
 
 def get_setting(key, default_value):
-    db = load_db()
-    return db.get("settings", {}).get(key, str(default_value))
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM settings WHERE key = %s;", (key,))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            return row[0]
+    except Exception as e:
+        logger.error(f"Error in get_setting: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return str(default_value)
 
 def set_setting(key, value):
-    db = load_db()
-    if "settings" not in db: db["settings"] = {}
-    db["settings"][key] = str(value)
-    save_db(db)
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO settings (key, value)
+            VALUES (%s, %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+        """, (key, str(value)))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in set_setting: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 def get_balance(user_id):
-    db = load_db()
-    return float(db.get("balances", {}).get(str(user_id), 0.0))
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT balance FROM balances WHERE user_id = %s;", (user_id,))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            return float(row[0])
+    except Exception as e:
+        logger.error(f"Error in get_balance: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return 0.0
 
 def set_balance(user_id, amount):
-    db = load_db()
-    if "balances" not in db: db["balances"] = {}
-    db["balances"][str(user_id)] = float(amount)
-    save_db(db)
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO balances (user_id, balance)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET balance = EXCLUDED.balance;
+        """, (user_id, float(amount)))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in set_balance: {e}")
+    finally:
+        if conn:
+            conn.close()
     user_balances[user_id] = float(amount)
+
+# --- Additional Supabase DB Helper Functions ---
+def get_purchase_count(user_id, pack_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT count FROM purchase_counts WHERE user_id = %s AND pack_id = %s;", (user_id, pack_id))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            return int(row[0])
+    except Exception as e:
+        logger.error(f"Error in get_purchase_count: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return 0
+
+def increment_purchase_count(user_id, pack_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO purchase_counts (user_id, pack_id, count)
+            VALUES (%s, %s, 1)
+            ON CONFLICT (user_id, pack_id) DO UPDATE SET count = purchase_counts.count + 1;
+        """, (user_id, pack_id))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in increment_purchase_count: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def save_deposit(deposit_id, user_id, amount, status, screenshot_file_id, recipient, send_time, method):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO deposits (id, user_id, amount, status, screenshot_file_id, recipient_number, send_time, method)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+        """, (deposit_id, user_id, amount, status, screenshot_file_id, recipient, send_time, method))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in save_deposit: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def get_deposit(deposit_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, amount, status, screenshot_file_id, recipient_number, send_time, method FROM deposits WHERE id = %s;", (deposit_id,))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            return {
+                "user_id": row[0],
+                "amount": row[1],
+                "status": row[2],
+                "screenshot_file_id": row[3],
+                "recipient_number": row[4],
+                "send_time": row[5],
+                "method": row[6]
+            }
+    except Exception as e:
+        logger.error(f"Error in get_deposit: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return None
+
+def update_deposit_status(deposit_id, status):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE deposits SET status = %s WHERE id = %s;", (status, deposit_id))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in update_deposit_status: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def get_user_info(user_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT username, join_date FROM active_users WHERE user_id = %s;", (user_id,))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            return {
+                "username": row[0] or "N/A",
+                "join_date": row[1]
+            }
+    except Exception as e:
+        logger.error(f"Error in get_user_info: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return {"username": "N/A", "join_date": None}
+
+def get_file_info(user_id, file_name):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT file_type, upload_time FROM user_files WHERE user_id = %s AND file_name = %s;", (user_id, file_name))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            return {
+                "type": row[0],
+                "upload_time": row[1]
+            }
+    except Exception as e:
+        logger.error(f"Error in get_file_info: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return None
+
+def update_package(pack_id, field, value):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(f"UPDATE packages SET {field} = %s WHERE id = %s;", (value, pack_id))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in update_package: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def add_package(pack_id, name, days, price, purchase_limit=0):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO packages (id, name, days, price, purchase_limit)
+            VALUES (%s, %s, %s, %s, %s);
+        """, (pack_id, name, days, price, purchase_limit))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error in add_package: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 # --- Intercept menu interactions ---
 def check_menu_intercept(message):
@@ -357,11 +921,11 @@ def check_menu_intercept(message):
                 if cleaned_text == '/start':
                     _logic_send_welcome(message)
                 elif cleaned_text == '/uploadfile':
-                    _logic_upload_file(message)
+                    _logic_upload_file(message, sender_id=message.from_user.id)
                 elif cleaned_text == '/checkfiles':
-                    _logic_check_files(message)
+                    _logic_check_files(message, sender_id=message.from_user.id)
                 elif cleaned_text == '/botspeed':
-                    _logic_bot_speed(message)
+                    _logic_bot_speed(message, sender_id=message.from_user.id)
                 elif cleaned_text == '/sendcommand':
                     _logic_send_command(message)
                 elif cleaned_text == '/contactowner':
@@ -369,9 +933,9 @@ def check_menu_intercept(message):
                 elif cleaned_text == '/subscriptions':
                     _logic_subscriptions_panel(message)
                 elif cleaned_text == '/statistics':
-                    _logic_statistics(message)
+                    _logic_statistics(message, sender_id=message.from_user.id)
                 elif cleaned_text == '/broadcast':
-                    _logic_broadcast_init(message)
+                    _logic_broadcast_init(message, sender_id=message.from_user.id)
                 elif cleaned_text == '/lockbot':
                     _logic_toggle_lock_bot(message)
                 elif cleaned_text == '/adminpanel':
@@ -380,6 +944,8 @@ def check_menu_intercept(message):
                     _logic_run_all_scripts(message)
                 elif cleaned_text == '/ping':
                     ping(message)
+                elif cleaned_text == '/restart':
+                    command_restart_main(message)
             else:
                 logic_func = BUTTON_TEXT_TO_LOGIC.get(cleaned_text)
                 if logic_func:
@@ -418,6 +984,9 @@ def kill_process_tree(process_info):
             pass
 
 def run_script(file_path, user_id, user_folder, file_name, message_obj):
+    # Auto-install missing Python packages before starting
+    auto_install_python_deps(file_path, user_folder, user_id)
+
     script_key = f"{user_id}_{file_name}"
     log_path = os.path.join(user_folder, f"{os.path.splitext(file_name)[0]}.log")
     
@@ -427,8 +996,9 @@ def run_script(file_path, user_id, user_folder, file_name, message_obj):
         
     try:
         log_file = open(log_path, 'w', encoding='utf-8', errors='ignore')
+        # Added -u flag to execute Python scripts completely unbuffered for Realtime Logs
         process = subprocess.Popen(
-            [sys.executable, file_path],
+            [sys.executable, '-u', file_path],
             stdout=log_file,
             stderr=log_file,
             stdin=subprocess.PIPE,
@@ -459,6 +1029,9 @@ def run_script(file_path, user_id, user_folder, file_name, message_obj):
         except Exception: pass
 
 def run_js_script(file_path, user_id, user_folder, file_name, message_obj):
+    # Auto-install missing JS npm packages before starting
+    auto_install_js_deps(file_path, user_folder, user_id)
+
     script_key = f"{user_id}_{file_name}"
     log_path = os.path.join(user_folder, f"{os.path.splitext(file_name)[0]}.log")
     
@@ -502,15 +1075,33 @@ def run_js_script(file_path, user_id, user_folder, file_name, message_obj):
 # --- Menus & Keyboards Creators ---
 def create_reply_keyboard_main_menu(user_id):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    layout = ADMIN_COMMAND_BUTTONS_LAYOUT_USER_SPEC if is_user_admin(user_id) else COMMAND_BUTTONS_LAYOUT_USER_SPEC
-    for row in layout:
-        markup.row(*row)
+    
+    btn_products = types.KeyboardButton("🛍️ Products")
+    btn_balance = types.KeyboardButton("💵 Balance")
+    btn_recharge = types.KeyboardButton("💵 Recharge")
+    btn_deploy = types.KeyboardButton("🚀 Deploy Bot")
+    btn_my_bot = types.KeyboardButton("🤖 My Bot")
+    btn_speed = types.KeyboardButton("⚡ Bot Speed")
+    btn_stats = types.KeyboardButton("📊 Statistics")
+    btn_support = types.KeyboardButton("📞 Help & Support")
+    
+    markup.row(btn_products, btn_balance)
+    markup.row(btn_recharge, btn_deploy)
+    markup.row(btn_my_bot, btn_speed)
+    
+    if is_user_admin(user_id):
+        btn_admin = types.KeyboardButton("👑 Admin Panel")
+        markup.row(btn_stats, btn_admin)
+        markup.row(btn_support)
+    else:
+        markup.row(btn_stats, btn_support)
+        
     return markup
 
 def create_send_command_menu():
     markup = types.InlineKeyboardMarkup()
     markup.row(
-        types.InlineKeyboardButton("📝 Send to Running Script", callback_data="send_to_process"),
+        types.InlineKeyboardButton("🔵 Send to Running Script", callback_data="send_to_process"),
         types.InlineKeyboardButton("📜 View All Logs", callback_data="view_all_logs")
     )
     return markup
@@ -523,7 +1114,7 @@ def create_subscription_menu():
     )
     markup.row(
         types.InlineKeyboardButton("🔍 Check Sub Status", callback_data="check_subscription"),
-        types.InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_panel")
+        types.InlineKeyboardButton("🔵 Admin Panel", callback_data="admin_panel")
     )
     return markup
 
@@ -541,24 +1132,27 @@ def create_admin_panel():
     sales_status = get_setting("sales_status", "ON")
     sales_btn_text = "🔴 Turn Sales OFF" if sales_status == "ON" else "🟢 Turn Sales ON"
     
+    recharge_status = get_setting("recharge_status", "ON")
+    recharge_btn_text = "🔴 Turn Recharge OFF" if recharge_status == "ON" else "🟢 Turn Recharge ON"
+    
     markup.row(
         types.InlineKeyboardButton(sales_btn_text, callback_data="admin_toggle_sales"),
-        types.InlineKeyboardButton("📢 Broadcast Msg", callback_data="broadcast")
+        types.InlineKeyboardButton(recharge_btn_text, callback_data="admin_toggle_recharge")
     )
     markup.row(
-        types.InlineKeyboardButton("🔑 Manage Admins", callback_data="list_admins"),
-        types.InlineKeyboardButton("⚙️ Edit Bot Limits", callback_data="edit_bot_limits")
+        types.InlineKeyboardButton("📢 Broadcast Msg", callback_data="broadcast"),
+        types.InlineKeyboardButton("🔑 Manage Admins", callback_data="list_admins")
     )
     markup.row(
-        types.InlineKeyboardButton("➕ Add Admin", callback_data="add_admin"),
-        types.InlineKeyboardButton("➖ Remove Admin", callback_data="remove_admin")
+        types.InlineKeyboardButton("🟢 Add Admin", callback_data="add_admin"),
+        types.InlineKeyboardButton("🔴 Remove Admin", callback_data="remove_admin")
     )
     markup.row(
-        types.InlineKeyboardButton("🔙 Back to Main", callback_data="back_to_main")
+        types.InlineKeyboardButton("🔵 Back to Main", callback_data="back_to_main")
     )
     return markup
 
-def create_control_buttons(user_id, file_name, is_running):
+def create_control_buttons(user_id, file_name, is_running, viewer_id=None):
     markup = types.InlineKeyboardMarkup(row_width=2)
     if is_running:
         markup.row(
@@ -573,8 +1167,16 @@ def create_control_buttons(user_id, file_name, is_running):
         types.InlineKeyboardButton("📜 View Logs", callback_data=f"logs_{user_id}_{file_name}"),
         types.InlineKeyboardButton("🗑️ Delete File", callback_data=f"delete_{user_id}_{file_name}")
     )
+    
+    # Custom File Access Controls (for Admins inspecting other users)
+    if viewer_id and is_user_admin(viewer_id):
+        markup.row(
+            types.InlineKeyboardButton("📄 View Code", callback_data=f"adm_viewcode_{user_id}_{file_name}"),
+            types.InlineKeyboardButton("✏️ Edit Code", callback_data=f"adm_editcode_{user_id}_{file_name}")
+        )
+        
     markup.row(
-        types.InlineKeyboardButton("🔙 Back to Bot List", callback_data="back_to_my_bot")
+        types.InlineKeyboardButton("🔵 Back to Bot List", callback_data=f"usermg_files_{user_id}" if viewer_id and is_user_admin(viewer_id) and viewer_id != user_id else "back_to_my_bot")
     )
     return markup
 
@@ -590,8 +1192,8 @@ def show_balance_packages_menu(message_or_call, user_id):
         expiry = user_subscriptions[user_id].get('expiry')
         if expiry and expiry > datetime.now():
             sub_status = "🟢 <b>Active Subscriber</b>"
-    if is_user_admin(user_id):
-        sub_status = "🟢 <b>Active Subscriber (🛡️ Admin)</b>"
+    if is_user_admin(user_id) or user_id == OWNER_ID:
+        sub_status = "🟢 <b>Active Subscriber (🛡️ Owner/Admin)</b>"
 
     text = (f"💰 <b>Your Balance & Subscription details</b>\n\n"
             f"👤 <b>User ID:</b> <code>{user_id}</code>\n"
@@ -615,6 +1217,11 @@ def recharge_balance_command(message):
     if bot_locked and not is_user_admin(user_id):
         bot.reply_to(message, "⚠️ Bot locked by admin.")
         return
+        
+    recharge_status = get_setting("recharge_status", "ON")
+    if recharge_status == "OFF" and not is_user_admin(user_id):
+        bot.reply_to(message, "🔴 Recharge system is currently disabled by Admin.")
+        return
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.row(
@@ -631,7 +1238,13 @@ def recharge_balance_command(message):
                      reply_markup=markup, parse_mode='Markdown')
 
 def recharge_balance_callback(call):
+    user_id = call.from_user.id
     bot.answer_callback_query(call.id)
+    
+    recharge_status = get_setting("recharge_status", "ON")
+    if recharge_status == "OFF" and not is_user_admin(user_id):
+        bot.send_message(call.message.chat.id, "🔴 Recharge system is currently disabled by Admin.")
+        return
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.row(
@@ -656,9 +1269,9 @@ def handle_paymethod_selection(call):
     
     pay_details = ""
     if method == "Bkash":
-        pay_details = "📞 *Bkash Personal Number:* `01706490391`\n💸 Please Send Money to this Bkash number."
+        pay_details = "📞 *Bkash Personal Number:* `01722259318`\n💸 Please Send Money to this Bkash number."
     elif method == "Nagad":
-        pay_details = "📞 *Nagad Personal Number:* `01706490391`\n💸 Please Send Money to this Nagad number."
+        pay_details = "📞 *Nagad Personal Number:* `01722259318`\n💸 Please Send Money to this Nagad number."
     elif method == "Binance":
         pay_details = "🔶 *Binance Pay ID:* `1229559831`\n💸 Please execute payment to this Binance Pay ID."
     elif method == "Rocket":
@@ -762,21 +1375,8 @@ def process_recharge_screenshot(message):
     send_time = data.get('send_time', 'Unknown')
     method = data.get('method', 'Bkash')
     
-    deposit_data = {
-        "user_id": user_id,
-        "amount": amount,
-        "status": "Pending",
-        "screenshot_file_id": photo_file_id,
-        "recipient_number": recipient,
-        "send_time": send_time,
-        "method": method
-    }
-    
     deposit_id = str(int(time.time() * 1000))
-    db = load_db()
-    if "deposits" not in db: db["deposits"] = {}
-    db["deposits"][deposit_id] = deposit_data
-    save_db(db)
+    save_deposit(deposit_id, user_id, amount, "Pending", photo_file_id, recipient, send_time, method)
         
     if user_id in temp_recharges:
         del temp_recharges[user_id]
@@ -811,8 +1411,7 @@ def handle_deposit_callback(call):
     action = parts[1]
     deposit_id = parts[2]
     
-    db = load_db()
-    dep = db.get("deposits", {}).get(deposit_id)
+    dep = get_deposit(deposit_id)
     if not dep:
         bot.answer_callback_query(call.id, "❌ Deposit request not found!", show_alert=True)
         return
@@ -826,8 +1425,7 @@ def handle_deposit_callback(call):
         return
         
     if action == "approve":
-        db["deposits"][deposit_id]["status"] = "Approved"
-        save_db(db)
+        update_deposit_status(deposit_id, "Approved")
         
         current_balance = get_balance(target_user_id)
         new_balance = current_balance + amount
@@ -842,8 +1440,7 @@ def handle_deposit_callback(call):
         bot.edit_message_caption(call.message.caption + "\n\n🟢 *Status: Approved ✅*", call.message.chat.id, call.message.message_id, reply_markup=None, parse_mode='Markdown')
         
     elif action == "reject":
-        db["deposits"][deposit_id]["status"] = "Rejected"
-        save_db(db)
+        update_deposit_status(deposit_id, "Rejected")
         
         bot.answer_callback_query(call.id, "❌ Deposit rejected.")
         try:
@@ -887,7 +1484,7 @@ def handle_buy_pkg_callback(call):
     pack_id = call.data.replace('buy_pkg_', '')
     
     sales_status = get_setting("sales_status", "ON")
-    if sales_status == "OFF":
+    if sales_status == "OFF" and not is_user_admin(user_id):
         bot.answer_callback_query(call.id, "🔴 Sales are currently turned OFF by the Admin. Please try again later.", show_alert=True)
         return
 
@@ -902,16 +1499,14 @@ def handle_buy_pkg_callback(call):
     price = float(pack.get("price", 0.0))
     purchase_limit = int(pack.get("purchase_limit", 0))
     
-    # --- FREE PACKAGE ANTI-SPAM LOGIC ---
     if price == 0.0:
         current_expiry = user_subscriptions.get(user_id, {}).get('expiry')
         if current_expiry and current_expiry > datetime.now():
-            bot.answer_callback_query(call.id, "❌ Apnar active package er meyad ekhono ache! Meyad sesh hole abar free package nite parben.", show_alert=True)
+            bot.answer_callback_query(call.id, "❌ Your active package is still valid! You can take the free package again once the validity expires.", show_alert=True)
             return
 
-    db = load_db()
     if purchase_limit > 0:
-        current_purchases = int(db.get("purchase_counts", {}).get(str(user_id), {}).get(pack_id, 0))
+        current_purchases = get_purchase_count(user_id, pack_id)
         if current_purchases >= purchase_limit:
             bot.answer_callback_query(call.id, f"❌ Purchase Limit Reached! You can buy/claim this package maximum {purchase_limit} times.", show_alert=True)
             return
@@ -926,11 +1521,7 @@ def handle_buy_pkg_callback(call):
         set_balance(user_id, new_balance)
 
     if purchase_limit > 0:
-        if "purchase_counts" not in db: db["purchase_counts"] = {}
-        if str(user_id) not in db["purchase_counts"]: db["purchase_counts"][str(user_id)] = {}
-        current_purchases = int(db["purchase_counts"][str(user_id)].get(pack_id, 0))
-        db["purchase_counts"][str(user_id)][pack_id] = current_purchases + 1
-        save_db(db)
+        increment_purchase_count(user_id, pack_id)
 
     current_expiry = user_subscriptions.get(user_id, {}).get('expiry')
     new_expiry = calculate_fair_expiry(days, current_expiry)
@@ -976,7 +1567,7 @@ def show_products_list(message_or_call, user_id):
 def edit_bot_limits_callback(call):
     bot.answer_callback_query(call.id)
     non_sub_lim = get_setting("non_sub_limit", "0")
-    sub_lim = get_setting("sub_limit", "2")
+    sub_lim = get_setting("sub_limit", "3")
     
     text = (f"⚙️ *Bot Limits Customization:*\n\n"
             f"1️⃣ Non-Subscriber Running Limit: `{non_sub_lim}`\n"
@@ -998,7 +1589,7 @@ def handle_modlimit_callback(call):
     if lim_type == "nonsub":
         msg_text = "❌ Enter max running bots for *Non-Subscriber* (e.g. 0):"
     else:
-        msg_text = "⭐ Enter max running bots for *Subscriber* (e.g. 2):"
+        msg_text = "⭐ Enter max running bots for *Subscriber* (e.g. 3):"
         
     msg = bot.send_message(call.message.chat.id, msg_text, parse_mode='Markdown')
     bot.register_next_step_handler(msg, lambda m: process_modlimit(m, lim_type))
@@ -1020,36 +1611,36 @@ def process_modlimit(message, lim_type):
         set_setting(setting_key, new_limit)
         bot.reply_to(message, f"✅ Success! {lim_type.capitalize()} limit set to `{new_limit}`.")
     except Exception:
-        bot.reply_to(message, "⚠️ Please enter a valid number (e.g., 2):")
+        bot.reply_to(message, "⚠️ Please enter a valid number (e.g., 3):")
 
 # --- Bot Deployment Flow with Limit & Name Request ---
-def _logic_check_files(message):
-    user_id = message.from_user.id
+def _logic_check_files(message, sender_id=None):
+    user_id = sender_id if sender_id else message.from_user.id
     if bot_locked and not is_user_admin(user_id):
         bot.reply_to(message, "⚠️ Bot locked by admin.")
         return
 
-    if not has_active_subscription(user_id):
-        markup = types.InlineKeyboardMarkup()
-        markup.row(
-            types.InlineKeyboardButton("🛍️ Buy Subscription", callback_data="buy_packages_list"),
-            types.InlineKeyboardButton("💵 Recharge", callback_data="recharge_balance")
-        )
-        bot.reply_to(message, "⚠️ *Subscription Required!*\n\nYou do not have an active subscription. Please purchase a subscription package to access the Deploy Bot panel.", reply_markup=markup, parse_mode='Markdown')
-        return
+    # Admins and Owner completely bypass subscription checks and bot deployment limits!
+    if not is_user_admin(user_id) and user_id != OWNER_ID:
+        if not has_active_subscription(user_id):
+            markup = types.InlineKeyboardMarkup()
+            markup.row(
+                types.InlineKeyboardButton("🛒 Buy Subscription", callback_data="buy_packages_list"),
+                types.InlineKeyboardButton("💵 Recharge", callback_data="recharge_balance")
+            )
+            bot.reply_to(message, "⚠️ *Subscription Required!*\n\nYou do not have an active subscription. Please purchase a subscription package to access the Deploy Bot panel.", reply_markup=markup, parse_mode='Markdown')
+            return
 
-    # Check active running bot count
-    active_limit = get_active_bot_limit(user_id)
-    active_count = get_active_bot_count(user_id)
-    if active_count >= active_limit:
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("🤖 View My Bot Hub", callback_data="back_to_my_bot")
-        )
-        bot.reply_to(message, f"⚠️ *Limit Reached!* You can only deploy and run *{active_limit} bots* at a time.\n\nPlease go to your Bot Hub to manage your current bots:", reply_markup=markup, parse_mode='Markdown')
-        return
+        active_limit = get_active_bot_limit(user_id)
+        active_count = get_active_bot_count(user_id)
+        if active_count >= active_limit:
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(
+                types.InlineKeyboardButton("🤖 View My Bot Hub", callback_data="back_to_my_bot")
+            )
+            bot.reply_to(message, f"⚠️ *Limit Reached!* You can only deploy and run *{active_limit} bots* at a time.\n\nPlease go to your Bot Hub to manage your current bots:", reply_markup=markup, parse_mode='Markdown')
+            return
 
-    # Request custom Bot Name
     msg = bot.reply_to(message, "🏷️ *Please enter a name for your Bot Project:*\n(e.g., SmsBot - numbers, letters & underscores only)", parse_mode='Markdown')
     bot.register_next_step_handler(msg, process_bot_name_input)
 
@@ -1068,20 +1659,14 @@ def process_bot_name_input(message):
         return
         
     temp_deploy_name[user_id] = bot_name
-    msg = bot.reply_to(message, f"🎯 Name set to: `{bot_name}`\n\n📤 Now send your script file (`.py`, `.js` or `.zip` format) as a Document:")
+    msg = bot.reply_to(message, f"🎯 Name set to: `{bot_name}`\n\n📤 Now send your script file (`Only zip` format into requirements.txt) as a Document:")
 
-# --- File Handling with Malware Detection ---
+# --- File Handling with Malware Detection REMOVED ---
 def handle_zip_file(downloaded_file_content, file_name_zip, message):
     user_id = message.from_user.id
     user_folder = get_user_folder(user_id)
     temp_dir = None
     
-    if user_id != OWNER_ID and user_id != 8346777366:
-        is_safe, reason = scan_file_for_malware(downloaded_file_content, file_name_zip, user_id)
-        if not is_safe:
-            bot.reply_to(message, f"🚨 Security Alert: {reason}")
-            return
-            
     bot_base_name = os.path.splitext(file_name_zip)[0]
     
     try:
@@ -1091,18 +1676,6 @@ def handle_zip_file(downloaded_file_content, file_name_zip, message):
             new_file.write(downloaded_file_content)
         
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            if user_id != OWNER_ID and user_id != 8346777366:
-                for member in zip_ref.infolist():
-                    member_name_lower = member.filename.lower()
-                    suspicious_extensions = ['.exe', '.dll', '.bat', '.cmd', '.scr', '.com']
-                    if any(member_name_lower.endswith(ext) for ext in suspicious_extensions):
-                        bot.reply_to(message, f"🚨 ZIP contains suspicious file: {member.filename}")
-                        return
-                    
-                    member_path = os.path.abspath(os.path.join(temp_dir, member.filename))
-                    if not member_path.startswith(os.path.abspath(temp_dir)):
-                        raise zipfile.BadZipFile(f"Zip has unsafe path: {member.filename}")
-            
             zip_ref.extractall(temp_dir)
 
         target_dir = temp_dir
@@ -1134,7 +1707,7 @@ def handle_zip_file(downloaded_file_content, file_name_zip, message):
 
         if req_file:
             req_path = os.path.join(temp_dir, req_file)
-            bot.reply_to(message, f"🔄 Installing Python deps from `{req_file}`...")
+            bot.reply_to(message, f"🔄 Installing `{req_file}`...")
             try:
                 command = [sys.executable, '-m', 'pip', 'install', '-r', req_path]
                 subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8', errors='ignore')
@@ -1165,7 +1738,6 @@ def handle_zip_file(downloaded_file_content, file_name_zip, message):
         if not main_script_name:
             bot.reply_to(message, "❌ No `.py` or `.js` script found in archive!"); return
 
-        # Rename entry script to project name given by user
         new_main_name = f"{bot_base_name}.{file_type}"
         src_main_path = os.path.join(temp_dir, main_script_name)
         dest_main_path = os.path.join(temp_dir, new_main_name)
@@ -1186,6 +1758,9 @@ def handle_zip_file(downloaded_file_content, file_name_zip, message):
         main_script_path = os.path.join(user_folder, main_script_name)
         bot.reply_to(message, f"💾 Extraction complete. Launching main script: `{main_script_name}`...", parse_mode='Markdown')
 
+        # Recurse & Save entire extracted folder to Supabase storage database
+        save_user_folder_to_db(user_id)
+
         if file_type == 'py':
              threading.Thread(target=run_script, args=(main_script_path, user_id, user_folder, main_script_name, message)).start()
         elif file_type == 'js':
@@ -1202,6 +1777,7 @@ def handle_zip_file(downloaded_file_content, file_name_zip, message):
 def handle_js_file(file_path, script_owner_id, user_folder, file_name, message):
     try:
         save_user_file(script_owner_id, file_name, 'js')
+        save_file_to_db(script_owner_id, file_path)
         threading.Thread(target=run_js_script, args=(file_path, script_owner_id, user_folder, file_name, message)).start()
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)}")
@@ -1209,11 +1785,36 @@ def handle_js_file(file_path, script_owner_id, user_folder, file_name, message):
 def handle_py_file(file_path, script_owner_id, user_folder, file_name, message):
     try:
         save_user_file(script_owner_id, file_name, 'py')
+        save_file_to_db(script_owner_id, file_path)
         threading.Thread(target=run_script, args=(file_path, script_owner_id, user_folder, file_name, message)).start()
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)}")
 
-# --- Text Document / File Receivers ---
+# --- Threaded Document Receiver Background Helper ---
+def process_document_background(message, file_info, file_ext, user_folder, file_name):
+    user_id = message.from_user.id
+    try:
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        if file_ext == '.zip':
+            handle_zip_file(downloaded_file, file_name, message)
+            return
+            
+        file_path = os.path.join(user_folder, file_name)
+        with open(file_path, 'wb') as f:
+            f.write(downloaded_file)
+            
+        bot.reply_to(message, f"💾 File saved as `{file_name}`. Launching process...", parse_mode='Markdown')
+        
+        if file_ext == '.py':
+            handle_py_file(file_path, user_id, user_folder, file_name, message)
+        elif file_ext == '.js':
+            handle_js_file(file_path, user_id, user_folder, file_name, message)
+            
+    except Exception as e:
+        logger.error(f"Error in background doc processing: {e}")
+        bot.reply_to(message, f"❌ Error processing file upload: {e}")
+
 @bot.message_handler(content_types=['document'])
 def handle_incoming_document(message):
     user_id = message.from_user.id
@@ -1229,14 +1830,15 @@ def handle_incoming_document(message):
         bot.reply_to(message, "❌ Format not supported! Send only `.py`, `.js` or `.zip` files.")
         return
 
-    active_limit = get_active_bot_limit(user_id)
-    if get_active_bot_count(user_id) >= active_limit:
-        bot.reply_to(message, f"⚠️ You already have {active_limit} active bots running. Stop or delete one first using the '🤖 My Bot' menu.")
-        return
+    # Skip active bot limits check for Admins and Owner!
+    if not is_user_admin(user_id) and user_id != OWNER_ID:
+        active_limit = get_active_bot_limit(user_id)
+        if get_active_bot_count(user_id) >= active_limit:
+            bot.reply_to(message, f"⚠️ You already have {active_limit} active bots running. Stop or delete one first using the '🤖 My Bot' menu.")
+            return
         
     user_folder = get_user_folder(user_id)
     
-    # Save file with project name requested by user
     if user_id in temp_deploy_name:
         bot_name = temp_deploy_name[user_id]
         file_name = f"{bot_name}{file_ext}"
@@ -1245,32 +1847,7 @@ def handle_incoming_document(message):
         bot.reply_to(message, "⚠️ Please click on the *🚀 Deploy Bot* button first to set your bot's name before sending files.", parse_mode='Markdown')
         return
         
-    try:
-        downloaded_file = bot.download_file(file_info.file_path)
-        
-        if file_ext == '.zip':
-            handle_zip_file(downloaded_file, file_name, message)
-            return
-            
-        is_safe, reason = scan_file_for_malware(downloaded_file, file_name, user_id)
-        if not is_safe:
-            bot.reply_to(message, f"🚨 Malware Signature Detected: {reason}")
-            return
-            
-        file_path = os.path.join(user_folder, file_name)
-        with open(file_path, 'wb') as f:
-            f.write(downloaded_file)
-            
-        bot.reply_to(message, f"💾 File saved as `{file_name}`. Launching process...", parse_mode='Markdown')
-        
-        if file_ext == '.py':
-            handle_py_file(file_path, user_id, user_folder, file_name, message)
-        elif file_ext == '.js':
-            handle_js_file(file_path, user_id, user_folder, file_name, message)
-            
-    except Exception as e:
-        logger.error(f"Error saving document: {e}")
-        bot.reply_to(message, f"❌ Error processing file upload: {e}")
+    threading.Thread(target=process_document_background, args=(message, file_info, file_ext, user_folder, file_name)).start()
 
 # --- Send Command and Logs Functions ---
 def _logic_send_command(message):
@@ -1358,7 +1935,6 @@ def send_log_file(message, log_path, log_filename):
 def _logic_send_welcome(message):
     user_id = message.from_user.id
     chat_id = message.chat.id
-    user_name = message.from_user.first_name
     user_username = message.from_user.username or "N/A"
 
     if bot_locked and not is_user_admin(user_id):
@@ -1373,7 +1949,7 @@ def _logic_send_welcome(message):
     expiry_info = ""
     balance = get_balance(user_id)
     
-    if user_id == OWNER_ID or user_id == 5409553122: 
+    if user_id == OWNER_ID: 
         user_status = "👑 Owner"
     elif is_user_admin(user_id): 
         user_status = "🛡️ Admin"
@@ -1389,12 +1965,14 @@ def _logic_send_welcome(message):
     else: 
         user_status = "Non-Subscriber"
 
-    welcome_msg_text = (f"〽️ <b>Welcome to Mino Bot Hosting!</b>\n\n"
-                        f"🆔 <b>Your User ID:</b> <code>{user_id}</code>\n"
-                        f"✳️ <b>Username:</b> <code>@{user_username}</code>\n"
-                        f"💵 <b>Balance:</b> <code>{balance:.2f} Tk</code>\n"
-                        f"🔰 <b>Status:</b> <code>{user_status}</code>{expiry_info}\n"
-                        f"📁 <b>Files Uploaded:</b> <code>{current_files} / {limit_str}</code>\n\n"
+    welcome_msg_text = (f"💠 <b>WELCOME TO MINO BOT HOSTING</b> 💠\n"
+                        f"────────────────────────\n"
+                        f"👤 <b>USER ID:</b> <code>{user_id}</code>\n"
+                        f"✳️ <b>USERNAME:</b> <code>@{user_username}</code>\n"
+                        f"💵 <b>YOUR BALANCE:</b> <code>{balance:.2f} Tk</code>\n"
+                        f"🔰 <b>STATUS:</b> <code>{user_status}</code>{expiry_info}\n"
+                        f"📂 <b>FILES UPLOADED:</b> <code>{current_files} / {limit_str}</code>\n"
+                        f"────────────────────────\n"
                         f"🤖 You can host and run Python (<code>.py</code>) and JavaScript (<code>.js</code>) scripts smoothly in real-time.\n\n"
                         f"👇 Use the menu buttons below to access your desired services.")
     
@@ -1408,8 +1986,8 @@ def _logic_balance_packages(message):
         return
     show_balance_packages_menu(message, user_id)
 
-def _logic_upload_file(message):
-    _logic_check_files(message)
+def _logic_upload_file(message, sender_id=None):
+    _logic_check_files(message, sender_id)
 
 # --- "My Bot" Menu Feature Implementation ---
 def _logic_my_bot(message):
@@ -1424,8 +2002,8 @@ def show_my_bot_status(chat_id, user_id, message_id=None):
         if expiry and expiry > datetime.now():
             days_left = (expiry - datetime.now()).days
             sub_status = f"🟢 Subscriber ({days_left} Days Remaining)"
-    if is_user_admin(user_id):
-        sub_status = "🟢 Active Subscriber (🛡️ Admin)"
+    if is_user_admin(user_id) or user_id == OWNER_ID:
+        sub_status = "🟢 Active Subscriber (🛡️ Owner/Admin)"
 
     text = f"🤖 *Your Bot Hub*\n\n⏳ *Subscription status:* {sub_status}\n\n"
     
@@ -1461,8 +2039,8 @@ def calculate_speed_percentage(latency_ms):
     speed = max(15.0, min(100.0, base_speed - deduction))
     return round(speed, 1)
 
-def _logic_bot_speed(message):
-    user_id = message.from_user.id
+def _logic_bot_speed(message, sender_id=None):
+    user_id = sender_id if sender_id else message.from_user.id
     chat_id = message.chat.id
     start_time_ping = time.time()
     wait_msg = bot.reply_to(message, "🏃 Testing speed...")
@@ -1471,7 +2049,7 @@ def _logic_bot_speed(message):
         latency = (time.time() - start_time_ping) * 1000
         speed_percent = calculate_speed_percentage(latency)
         status = "🔓 Unlocked" if not bot_locked else "🔒 Locked"
-        if user_id == OWNER_ID or user_id == 5409553122: user_level = "👑 Owner"
+        if user_id == OWNER_ID: user_level = "👑 Owner"
         elif is_user_admin(user_id): user_level = "🛡️ Admin"
         elif user_id in user_subscriptions and user_subscriptions[user_id].get('expiry', datetime.min) > datetime.now(): user_level = "⭐ Premium"
         else: user_level = "🆓 Free User"
@@ -1507,8 +2085,8 @@ def get_runtime_string(start_time):
     secs = seconds % 60
     return f"{hours:02d}h {minutes:02d}m {secs:02d}s"
 
-def _logic_statistics(message):
-    user_id = message.from_user.id
+def _logic_statistics(message, sender_id=None):
+    user_id = sender_id if sender_id else message.from_user.id
     total_users = len(active_users)
     total_files_records = sum(len(files) for files in user_files.values())
 
@@ -1523,7 +2101,7 @@ def _logic_statistics(message):
                 user_running_bots.append(script_info_iter)
 
     stats_msg = (f"📊 *Bot Statistics*\n\n"
-                 f"👥 Total Users: `{total_users}`\n"
+                 f"💠 Total Users: `{total_users}`\n"
                  f"📂 Total File Records: `{total_files_records}`\n"
                  f"🟢 Total Active Bots: `{running_bots_count}`\n\n")
 
@@ -1541,8 +2119,9 @@ def _logic_statistics(message):
 
     bot.reply_to(message, stats_msg, parse_mode='Markdown')
 
-def _logic_broadcast_init(message):
-    if not is_user_admin(message.from_user.id):
+def _logic_broadcast_init(message, sender_id=None):
+    user_id = sender_id if sender_id else message.from_user.id
+    if not is_user_admin(user_id):
         bot.reply_to(message, "⚠️ Admin permissions required.")
         return
     msg = bot.reply_to(message, "📢 Send message to broadcast to all active users.\n/cancel to abort.")
@@ -1567,7 +2146,7 @@ def _logic_admin_panel(message):
 def _logic_run_all_scripts(message_or_call):
     if isinstance(message_or_call, telebot.types.Message):
         admin_user_id = message_or_call.from_user.id
-        admin_chat_id = message_or_call.message.chat.id
+        admin_chat_id = message_or_call.chat.id
         reply_func = lambda text, **kwargs: bot.reply_to(message_or_call, text, **kwargs)
         admin_message_obj = message_or_call
     elif isinstance(message_or_call, telebot.types.CallbackQuery):
@@ -1613,6 +2192,7 @@ def _logic_run_all_scripts(message_or_call):
     summary_msg = (f"✅ All Users' Scripts - Processing Complete:\n\n"
                    f"▶️ Attempted to start: {started_count} scripts.\n"
                    f"👥 Users processed: {attempted_users}.\n")
+                   
     reply_func(summary_msg, parse_mode='Markdown')
 
 # --- Monitor Running Bots via Admin Panel ---
@@ -1667,6 +2247,30 @@ def show_user_management_panel(chat_id, target_id):
     balance = get_balance(target_id)
     expiry = user_subscriptions.get(target_id, {}).get('expiry')
     
+    # Track join date & registration period
+    user_info = get_user_info(target_id)
+    join_date_str = "N/A"
+    duration_str = "N/A"
+    username = user_info.get("username", "N/A")
+    join_date = user_info.get("join_date")
+    if join_date:
+        try:
+            if isinstance(join_date, str):
+                join_date = datetime.fromisoformat(join_date)
+            join_date_str = join_date.strftime("%Y-%m-%d %H:%M")
+            if join_date.tzinfo is not None:
+                join_date = join_date.replace(tzinfo=None)
+            diff = datetime.now() - join_date
+            if diff.days > 0:
+                duration_str = f"{diff.days} Days ago"
+            else:
+                hours = diff.seconds // 3600
+                mins = (diff.seconds % 3600) // 60
+                duration_str = f"{hours}h {mins}m ago"
+        except Exception as e:
+            logger.error(f"Error parsing join date: {e}")
+            pass
+
     sub_status = "❌ <b>Non-Subscriber</b>"
     days_remaining = 0
     if expiry:
@@ -1676,26 +2280,32 @@ def show_user_management_panel(chat_id, target_id):
         else:
             sub_status = "🔴 <b>Expired</b>"
             
+    user_files_list = user_files.get(target_id, [])
+    total_files = len(user_files_list)
+    active_bots = get_active_bot_count(target_id)
+    
     text = (f"👤 <b>User Control Panel</b>\n\n"
             f"🆔 <b>User ID:</b> <code>{target_id}</code>\n"
+            f"👤 <b>Username:</b> {username}\n"
+            f"📅 <b>Registered:</b> <code>{join_date_str}</code> ({duration_str})\n"
             f"💵 <b>Current Balance:</b> <code>{balance:.2f} Tk</code>\n"
             f"💳 <b>Subscription status:</b> {sub_status}\n"
             f"⏳ <b>Days Remaining:</b> <code>{days_remaining} Days</code>\n"
-            f"📅 <b>Expiry:</b> <code>{expiry.isoformat() if expiry else 'N/A'}</code>\n\n"
-            f"👇 Use the quick-actions below to manage this user's details:")
+            f"📂 <b>Total Files Deployed:</b> <code>{total_files}</code>\n"
+            f"🟢 <b>Active Running Bots:</b> <code>{active_bots}</code>\n\n"
+            f"👇 Use the quick-actions below to manage this user:")
             
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.row(
-        types.InlineKeyboardButton("➕ Add Balance", callback_data=f"usermg_addbal_{target_id}"),
-        types.InlineKeyboardButton("➖ Deduct Balance", callback_data=f"usermg_subbal_{target_id}")
+        types.InlineKeyboardButton("🟢 Add Balance", callback_data=f"usermg_addbal_{target_id}"),
+        types.InlineKeyboardButton("🔴 Deduct Balance", callback_data=f"usermg_subbal_{target_id}")
     )
     markup.row(
         types.InlineKeyboardButton("✏️ Set Balance", callback_data=f"usermg_setbal_{target_id}"),
         types.InlineKeyboardButton("📅 Edit Sub Days", callback_data=f"usermg_sub_{target_id}")
     )
-    # Admin access to view and control user's files directly!
     markup.row(
-        types.InlineKeyboardButton("📂 View User Files", callback_data=f"usermg_files_{target_id}"),
+        types.InlineKeyboardButton("📂 View & Edit Files", callback_data=f"usermg_files_{target_id}"),
         types.InlineKeyboardButton("❌ Remove Sub", callback_data=f"usermg_rem_{target_id}")
     )
     markup.row(
@@ -1712,7 +2322,7 @@ def usermg_files_callback(call):
     
 def show_admin_user_files(chat_id, target_id):
     user_files_list = user_files.get(target_id, [])
-    text = f"📂 *Files List of User ID:* `{target_id}`\n\nClick on any file to control (Start, Stop, Restart, View Logs, Delete):"
+    text = f"📂 *Files List of User ID:* `{target_id}`\n\nClick on any file to view stats, inspect code, edit/overwrite, stop, run, or delete:"
     markup = types.InlineKeyboardMarkup(row_width=2)
     
     if not user_files_list:
@@ -1841,7 +2451,7 @@ def admin_edit_packages_callback(call):
             
     markup.row(
         types.InlineKeyboardButton("➕ Add Product", callback_data="admin_pkg_add_init"),
-        types.InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_panel")
+        types.InlineKeyboardButton("🔵 Admin Panel", callback_data="admin_panel")
     )
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='HTML')
 
@@ -1899,9 +2509,7 @@ def process_admin_pkg_name(message, pack_id):
         bot.reply_to(message, "❌ Name cannot be empty!")
         return
     
-    db = load_db()
-    db["packages"][pack_id]["name"] = new_name
-    save_db(db)
+    update_package(pack_id, "name", new_name)
     
     bot.reply_to(message, f"🟢 <b>Success!</b> Package name updated to <code>{new_name}</code>.", parse_mode='HTML')
     show_package_admin_panel(message.chat.id, pack_id)
@@ -1920,9 +2528,7 @@ def process_admin_pkg_price(message, pack_id):
         if new_price < 0:
             raise ValueError()
         
-        db = load_db()
-        db["packages"][pack_id]["price"] = new_price
-        save_db(db)
+        update_package(pack_id, "price", new_price)
         
         msg_val = "FREE" if new_price == 0.0 else f"{new_price:.2f} Tk"
         bot.reply_to(message, f"🟢 <b>Success!</b> Package price updated to <code>{msg_val}</code>.", parse_mode='HTML')
@@ -1944,9 +2550,7 @@ def process_admin_pkg_days(message, pack_id):
         if new_days <= 0:
             raise ValueError()
             
-        db = load_db()
-        db["packages"][pack_id]["days"] = new_days
-        save_db(db)
+        update_package(pack_id, "days", new_days)
         
         bot.reply_to(message, f"🟢 <b>Success!</b> Package validity updated to <code>{new_days} Days</code>.", parse_mode='HTML')
         show_package_admin_panel(message.chat.id, pack_id)
@@ -1967,9 +2571,7 @@ def process_admin_pkg_limit(message, pack_id):
         if new_limit < 0:
             raise ValueError()
             
-        db = load_db()
-        db["packages"][pack_id]["purchase_limit"] = new_limit
-        save_db(db)
+        update_package(pack_id, "purchase_limit", new_limit)
         
         limit_val = "Unlimited" if new_limit == 0 else f"{new_limit} times"
         bot.reply_to(message, f"🟢 <b>Success!</b> Purchase limit updated to <code>{limit_val}</code>.", parse_mode='HTML')
@@ -2018,14 +2620,11 @@ def process_admin_add_pkg_price(message, name, days):
         if price < 0:
             raise ValueError()
         
-        db = load_db()
-        packs = db.get("packages", {})
+        packs = get_all_packages()
         existing_ids = [int(k) for k in packs.keys() if k.isdigit()]
         next_id = str(max(existing_ids) + 1) if existing_ids else "1"
         
-        new_pack = {"name": name, "days": days, "price": price, "purchase_limit": 0}
-        db["packages"][next_id] = new_pack
-        save_db(db)
+        add_package(next_id, name, days, price, 0)
         
         bot.reply_to(message, f"🟢 <b>Success!</b> New package added successfully:\n\n"
                               f"🆔 <b>ID:</b> <code>{next_id}</code>\n"
@@ -2052,6 +2651,20 @@ def admin_toggle_sales_callback(call):
     bot.answer_callback_query(call.id, f"✅ Sales turned {new_status}!", show_alert=True)
     admin_panel_callback(call)
 
+# --- Global Recharge ON/OFF ---
+def admin_toggle_recharge_callback(call):
+    user_id = call.from_user.id
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id, "⚠️ Admin permissions required.", show_alert=True)
+        return
+    
+    current_status = get_setting("recharge_status", "ON")
+    new_status = "OFF" if current_status == "ON" else "ON"
+    set_setting("recharge_status", new_status)
+    
+    bot.answer_callback_query(call.id, f"✅ Recharge system turned {new_status}!", show_alert=True)
+    admin_panel_callback(call)
+
 # --- Direct Callback Mapping Wrappers ---
 def admin_required_callback(call, func):
     if is_user_admin(call.from_user.id):
@@ -2060,18 +2673,18 @@ def admin_required_callback(call, func):
         bot.answer_callback_query(call.id, "⚠️ Admin permissions required.", show_alert=True)
 
 def owner_required_callback(call, func):
-    if call.from_user.id == OWNER_ID or call.from_user.id == 8346777366:
+    if call.from_user.id == OWNER_ID or call.from_user.id == ADMIN_ID:
         func(call)
     else:
         bot.answer_callback_query(call.id, "⚠️ Owner permissions required.", show_alert=True)
 
 def upload_callback(call):
     bot.answer_callback_query(call.id)
-    _logic_upload_file(call.message)
+    _logic_upload_file(call.message, sender_id=call.from_user.id)
 
 def check_files_callback(call):
     bot.answer_callback_query(call.id)
-    _logic_check_files(call.message)
+    _logic_check_files(call.message, sender_id=call.from_user.id)
 
 def file_control_callback(call):
     bot.answer_callback_query(call.id)
@@ -2081,32 +2694,55 @@ def file_control_callback(call):
     is_running = is_bot_running(script_owner_id, file_name)
     status_str = "🟢 Active" if is_running else "🔴 Stopped"
     
-    # Get subscription status for the display
+    # Get subscription status for display
     sub_status = "❌ Non-Subscriber"
     if script_owner_id in user_subscriptions:
         expiry = user_subscriptions[script_owner_id].get('expiry')
         if expiry and expiry > datetime.now():
             days_left = (expiry - datetime.now()).days
             sub_status = f"🟢 Subscriber ({days_left} Days)"
-    if is_user_admin(script_owner_id):
-        sub_status = "🟢 Active Subscriber (🛡️ Admin)"
+    if is_user_admin(script_owner_id) or script_owner_id == OWNER_ID:
+        sub_status = "🟢 Active Subscriber (🛡️ Owner/Admin)"
+
+    # Get file upload duration details
+    user_folder = get_user_folder(script_owner_id)
+    file_path = os.path.join(user_folder, file_name)
+    upload_time_str = "N/A"
+    if os.path.exists(file_path):
+        file_info = get_file_info(script_owner_id, file_name)
+        if file_info and file_info.get("upload_time"):
+            try:
+                upload_time = file_info["upload_time"]
+                if isinstance(upload_time, str):
+                    upload_time = datetime.fromisoformat(upload_time)
+                upload_time_str = upload_time.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                pass
+        else:
+            ctime = os.path.getctime(file_path)
+            upload_time_str = datetime.fromtimestamp(ctime).strftime("%Y-%m-%d %H:%M")
 
     runtime_info = ""
     script_key = f"{script_owner_id}_{file_name}"
     if is_running and script_key in bot_scripts:
         start_time = bot_scripts[script_key].get('start_time')
         if start_time:
-            runtime_info = f"\n⏱️ *Runtime:* `{get_runtime_string(start_time)}`"
+            duration = datetime.now() - start_time
+            hours = int(duration.total_seconds() // 3600)
+            minutes = int((duration.total_seconds() % 3600) // 60)
+            runtime_info = f"\n⏱️ *Running duration:* `{hours} hours {minutes} mins`"
     
     bot_type_str = "Running Bot" if is_running else "Deployed Bot"
     
-    text = (f"🤖 *Your Bot Hub*\n\n"
-            f"⏳ *Subscription status:* {sub_status}\n\n"
-            f"📂 *{bot_type_str}:* `{file_name}`\n"
-            f"🚦 *Status:* `{status_str}`{runtime_info}\n\n"
-            f"Manage your bot using the controls below:")
+    text = (f"🤖 *Bot Panel*\n\n"
+            f"👤 *Owner ID:* `{script_owner_id}`\n"
+            f"📂 *File:* `{file_name}`\n"
+            f"📅 *Uploaded on:* `{upload_time_str}`\n"
+            f"🚦 *Status:* `{status_str}`{runtime_info}\n"
+            f"⏳ *Subscription:* {sub_status}\n\n"
+            f"Manage the bot using the controls below:")
     
-    markup = create_control_buttons(script_owner_id, file_name, is_running)
+    markup = create_control_buttons(script_owner_id, file_name, is_running, viewer_id=call.from_user.id)
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='Markdown')
 
 def start_bot_callback(call):
@@ -2118,7 +2754,7 @@ def start_bot_callback(call):
         bot.answer_callback_query(call.id, "⚠️ This bot is already running!", show_alert=True)
         return
     
-    if not is_user_admin(script_owner_id) and get_active_bot_count(script_owner_id) >= get_active_bot_limit(script_owner_id):
+    if not is_user_admin(script_owner_id) and script_owner_id != OWNER_ID and get_active_bot_count(script_owner_id) >= get_active_bot_limit(script_owner_id):
         bot.answer_callback_query(call.id, f"⚠️ Limit reached ({get_active_bot_limit(script_owner_id)} active bot max). Stop your running bot first.", show_alert=True)
         return
     
@@ -2194,7 +2830,6 @@ def delete_bot_callback(call):
     
     bot.answer_callback_query(call.id, "🗑️ Deleting file...")
     
-    # Process Kill for Running Bots before deletion
     if is_bot_running(script_owner_id, file_name):
         process_info = bot_scripts.get(script_key)
         if process_info:
@@ -2215,10 +2850,13 @@ def delete_bot_callback(call):
         try: os.remove(log_path)
         except Exception: pass
     
+    # Persistent Sync: Delete from Database
+    relative_path = os.path.relpath(file_path, user_folder)
+    delete_file_from_db(script_owner_id, relative_path)
+    
     remove_user_file_db(script_owner_id, file_name)
     bot.answer_callback_query(call.id, f"✅ {file_name} deleted successfully!", show_alert=True)
     
-    # Reload My Bot menu screen (Back to the List view seamlessly)
     show_my_bot_status(call.message.chat.id, script_owner_id, call.message.message_id)
 
 def logs_bot_callback(call):
@@ -2261,7 +2899,7 @@ def logs_bot_callback(call):
 
 def speed_callback(call):
     bot.answer_callback_query(call.id)
-    _logic_bot_speed(call.message)
+    _logic_bot_speed(call.message, sender_id=call.from_user.id)
 
 def back_to_main_callback(call):
     bot.answer_callback_query(call.id)
@@ -2274,7 +2912,7 @@ def back_to_main_callback(call):
     expiry_info = ""
     balance = get_balance(user_id)
     
-    if user_id == OWNER_ID or user_id == 8346777366: 
+    if user_id == OWNER_ID: 
         user_status = "👑 Owner"
     elif is_user_admin(user_id): 
         user_status = "🛡️ Admin"
@@ -2290,21 +2928,23 @@ def back_to_main_callback(call):
     else: 
         user_status = "Non-Subscriber"
 
-    welcome_msg_text = (f"〽️ *Welcome to Mino Bot Hosting!*\n\n"
-                        f"🆔 Your User ID: `{user_id}`\n"
-                        f"✳️ Username: `@{user_username or 'Not set'}`\n"
-                        f"💵 Balance: `{balance:.2f} Tk`\n"
-                        f"🔰 Status: `{user_status}`{expiry_info}\n"
-                        f"📁 Files Uploaded: `{current_files} / {limit_str}`\n\n"
-                        f"🤖 You can host and run Python (`.py`) and JavaScript (`.js`) scripts smoothly in real-time.\n\n"
+    welcome_msg_text = (f"💠 <b>WELCOME TO MINO BOT HOSTING</b> 💠\n"
+                        f"────────────────────────\n"
+                        f"👤 <b>USER ID:</b> <code>{user_id}</code>\n"
+                        f"✳️ <b>USERNAME:</b> <code>@{user_username or 'Not set'}</code>\n"
+                        f"💵 <b>YOUR BALANCE:</b> <code>{balance:.2f} Tk</code>\n"
+                        f"🔰 <b>STATUS:</b> <code>{user_status}</code>{expiry_info}\n"
+                        f"📂 <b>FILES UPLOADED:</b> <code>{current_files} / {limit_str}</code>\n"
+                        f"────────────────────────\n"
+                        f"🤖 You can host and run Python (<code>.py</code>) and JavaScript (<code>.js</code>) scripts smoothly in real-time.\n\n"
                         f"👇 Use the menu buttons below to access your desired services.")
     
     bot.edit_message_text(welcome_msg_text, call.message.chat.id, call.message.message_id, 
-                           reply_markup=create_reply_keyboard_main_menu(user_id), parse_mode='Markdown')
+                           reply_markup=create_reply_keyboard_main_menu(user_id), parse_mode='HTML')
 
 def stats_callback(call):
     bot.answer_callback_query(call.id)
-    _logic_statistics(call.message)
+    _logic_statistics(call.message, sender_id=call.from_user.id)
 
 def run_all_scripts_callback(call):
     bot.answer_callback_query(call.id)
@@ -2312,7 +2952,7 @@ def run_all_scripts_callback(call):
 
 def broadcast_init_callback(call):
     bot.answer_callback_query(call.id)
-    _logic_broadcast_init(call.message)
+    _logic_broadcast_init(call.message, sender_id=call.from_user.id)
 
 def admin_panel_callback(call):
     bot.answer_callback_query(call.id)
@@ -2332,7 +2972,7 @@ def add_admin_init_callback(call):
     bot.register_next_step_handler(msg, process_add_admin)
 
 def process_add_admin(message):
-    if message.from_user.id not in [OWNER_ID, 5409553122]:
+    if message.from_user.id != OWNER_ID:
         bot.reply_to(message, "⚠️ Owner only.")
         return
     try:
@@ -2348,7 +2988,7 @@ def remove_admin_init_callback(call):
     bot.register_next_step_handler(msg, process_remove_admin)
 
 def process_remove_admin(message):
-    if message.from_user.id not in [OWNER_ID, 5409553122]:
+    if message.from_user.id != OWNER_ID:
         bot.reply_to(message, "⚠️ Owner only.")
         return
     try:
@@ -2425,6 +3065,9 @@ def delete_current_bot_callback(call):
             except Exception: pass
             
         remove_user_file_db(user_id, file_name)
+    
+    # Persistent Sync: Clear all file records of this user from DB
+    delete_all_user_files_from_db(user_id)
         
     bot.edit_message_text("✅ All active files deleted. Now click *🚀 Deploy Bot* button to deploy a fresh bot with a new name.", call.message.chat.id, call.message.message_id, reply_markup=None, parse_mode='Markdown')
 
@@ -2453,12 +3096,259 @@ def replace_current_bot_direct_callback(call):
             except Exception: pass
             
         remove_user_file_db(user_id, file_name)
+    
+    # Persistent Sync: Clear all file records of this user from DB
+    delete_all_user_files_from_db(user_id)
         
     bot.delete_message(call.message.chat.id, call.message.message_id)
     
-    # Re-trigger Deploy Flow
     msg = bot.send_message(call.message.chat.id, "🏷️ *Please enter a name for your replacement Bot Project:*", parse_mode='Markdown')
     bot.register_next_step_handler(msg, process_bot_name_input)
+
+# --- Broadcast Logic Implementation ---
+def process_broadcast_message(message):
+    user_id = message.from_user.id
+    if not is_user_admin(user_id):
+        return
+    if message.text and message.text.lower() == '/cancel':
+        bot.reply_to(message, "❌ Broadcast cancelled.")
+        return
+    
+    broadcast_text = message.text
+    pending_broadcasts[user_id] = broadcast_text
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.row(
+        types.InlineKeyboardButton("✅ Confirm Broadcast", callback_data=f"confirm_broadcast_{user_id}"),
+        types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_broadcast")
+    )
+    bot.reply_to(message, f"📢 *Are you sure you want to broadcast this message to all users?*\n\n{broadcast_text}", reply_markup=markup, parse_mode='Markdown')
+
+def handle_confirm_broadcast(call):
+    admin_id = int(call.data.replace('confirm_broadcast_', ''))
+    bot.answer_callback_query(call.id)
+    
+    broadcast_text = pending_broadcasts.get(admin_id)
+    if not broadcast_text:
+        bot.send_message(call.message.chat.id, "❌ No pending broadcast found.")
+        return
+    
+    bot.edit_message_text("📤 Dispatching broadcast to all active users...", call.message.chat.id, call.message.message_id)
+    
+    success_count = 0
+    fail_count = 0
+    for uid in list(active_users):
+        try:
+            bot.send_message(uid, f"📢 *Important Broadcast Notice:*\n\n{broadcast_text}", parse_mode='Markdown')
+            success_count += 1
+            time.sleep(0.05) 
+        except Exception:
+            fail_count += 1
+            
+    bot.send_message(call.message.chat.id, f"✅ Broadcast finished!\n\n🟢 Successful: {success_count}\n🔴 Failed: {fail_count}")
+    if admin_id in pending_broadcasts:
+        del pending_broadcasts[admin_id]
+
+def handle_cancel_broadcast(call):
+    bot.answer_callback_query(call.id, "Broadcast cancelled.")
+    bot.edit_message_text("❌ Broadcast cancelled by Admin.", call.message.chat.id, call.message.message_id)
+
+# --- Subscription Init/Actions Management ---
+def add_subscription_init_callback(call):
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, "➕ Enter User ID and Days separated by `|` (e.g. `1234567 | 30`):")
+    bot.register_next_step_handler(msg, process_add_subscription)
+
+def process_add_subscription(message):
+    if not is_user_admin(message.from_user.id):
+        return
+    try:
+        parts = message.text.split('|')
+        target_id = int(parts[0].strip())
+        days = int(parts[1].strip())
+        
+        current_expiry = user_subscriptions.get(target_id, {}).get('expiry')
+        new_expiry = calculate_fair_expiry(days, current_expiry)
+        save_subscription(target_id, new_expiry)
+        
+        bot.reply_to(message, f"✅ Subscription of `{days} Days` successfully added to User: `{target_id}`.\n📅 Expiry: `{new_expiry}`", parse_mode='Markdown')
+    except Exception as e:
+        bot.reply_to(message, f"❌ Failed. Use correct format `User_ID | Days`.\nError: {e}")
+
+def remove_subscription_init_callback(call):
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, "➖ Enter User ID to remove subscription:")
+    bot.register_next_step_handler(msg, process_remove_subscription)
+
+def process_remove_subscription(message):
+    if not is_user_admin(message.from_user.id):
+        return
+    try:
+        target_id = int(message.text.strip())
+        remove_subscription_db(target_id)
+        bot.reply_to(message, f"✅ Subscription removed for User: `{target_id}`", parse_mode='Markdown')
+    except Exception as e:
+        bot.reply_to(message, f"❌ Failed. Error: {e}")
+
+def check_subscription_init_callback(call):
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, "🔍 Enter User ID to verify subscription details:")
+    bot.register_next_step_handler(msg, process_check_subscription)
+
+def process_check_subscription(message):
+    if not is_user_admin(message.from_user.id):
+        return
+    try:
+        target_id = int(message.text.strip())
+        expiry = user_subscriptions.get(target_id, {}).get('expiry')
+        if expiry:
+            if expiry > datetime.now():
+                days_left = (expiry - datetime.now()).days
+                bot.reply_to(message, f"🟢 User `{target_id}` has an Active Premium Subscription.\n⏳ Remaining: `{days_left} Days` (Expiry: `{expiry}`)", parse_mode='Markdown')
+            else:
+                bot.reply_to(message, f"🔴 User `{target_id}` subscription has expired on `{expiry}`", parse_mode='Markdown')
+        else:
+            bot.reply_to(message, f"❌ User `{target_id}` has no active subscription record.", parse_mode='Markdown')
+    except Exception as e:
+        bot.reply_to(message, f"❌ Failed. Error: {e}")
+
+# --- Command & Log Callback Mappings ---
+def send_command_callback(call):
+    bot.answer_callback_query(call.id)
+    _logic_send_command(call.message)
+
+def send_to_process_callback(call):
+    bot.answer_callback_query(call.id)
+    send_to_process_init(call.message)
+
+def sendcmd_select_callback(call):
+    script_key = call.data.replace('sendcmd_select_', '')
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(call.message.chat.id, f"📝 Enter command to send to `{script_key}`:")
+    bot.register_next_step_handler(msg, lambda m: process_send_command(m, script_key))
+
+def view_all_logs_callback(call):
+    bot.answer_callback_query(call.id)
+    view_all_logs(call.message)
+
+def viewlog_callback(call):
+    bot.answer_callback_query(call.id)
+    parts = call.data.split('_')
+    target_id = int(parts[1])
+    log_file = "_".join(parts[2:])
+    user_folder = get_user_folder(target_id)
+    log_path = os.path.join(user_folder, log_file)
+    send_log_file(call.message, log_path, log_file)
+
+def toggle_lock_admin_callback(call):
+    bot.answer_callback_query(call.id)
+    global bot_locked
+    bot_locked = not bot_locked
+    status = "locked" if bot_locked else "unlocked"
+    bot.edit_message_text(f"🔒 Bot has been {status}.", call.message.chat.id, call.message.message_id)
+
+def handle_buy_product(call):
+    bot.answer_callback_query(call.id)
+    buy_packages_list_callback(call)
+
+# --- Admin View Code & Edit Code Systems ---
+def adm_viewcode_callback(call):
+    user_id = call.from_user.id
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id, "⚠️ Admins only.", show_alert=True)
+        return
+    bot.answer_callback_query(call.id)
+    
+    parts = call.data.split('_')
+    target_user_id = int(parts[2])
+    file_name = "_".join(parts[3:])
+    
+    user_folder = get_user_folder(target_user_id)
+    file_path = os.path.join(user_folder, file_name)
+    
+    if not os.path.exists(file_path):
+        bot.send_message(call.message.chat.id, "❌ File not found on disk!")
+        return
+        
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        
+        if not content.strip():
+            content = "# (Empty File)"
+        
+        if len(content) <= 3500:
+            bot.send_message(call.message.chat.id, f"📄 *Source code of `{file_name}`:*\n\n```python\n{content}\n```", parse_mode='Markdown')
+        else:
+            with open(file_path, 'rb') as doc_f:
+                bot.send_document(call.message.chat.id, doc_f, caption=f"📄 *Full Source File:* `{file_name}`", parse_mode='Markdown')
+    except Exception as e:
+        bot.send_message(call.message.chat.id, f"❌ Error reading file: {e}")
+
+def adm_editcode_callback(call):
+    user_id = call.from_user.id
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id, "⚠️ Admins only.", show_alert=True)
+        return
+    bot.answer_callback_query(call.id)
+    
+    parts = call.data.split('_')
+    target_user_id = int(parts[2])
+    file_name = "_".join(parts[3:])
+    
+    msg = bot.send_message(call.message.chat.id, f"✏️ *Editing file `{file_name}` of user `{target_user_id}`*\n\nPlease reply with the **New Source Code** or **Upload the new script file** to overwrite it:\nType `/cancel` to abort.", parse_mode='Markdown')
+    bot.register_next_step_handler(msg, lambda m: process_adm_edit_code(m, target_user_id, file_name))
+    
+def process_adm_edit_code(message, target_user_id, file_name):
+    if check_menu_intercept(message):
+        return
+    if message.text and message.text.strip().lower() == '/cancel':
+        bot.reply_to(message, "❌ Editing cancelled.")
+        return
+        
+    user_folder = get_user_folder(target_user_id)
+    file_path = os.path.join(user_folder, file_name)
+    
+    try:
+        if message.document:
+            file_info = bot.get_file(message.document.file_id)
+            downloaded_file = bot.download_file(file_info.file_path)
+            with open(file_path, 'wb') as f:
+                f.write(downloaded_file)
+        elif message.text:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(message.text)
+        else:
+            bot.reply_to(message, "⚠️ Unsupported input type. Please send code text or upload a document.")
+            return
+        
+        file_type = 'py' if file_name.endswith('.py') else 'js'
+        
+        # Persistent Sync: Save overwritten file to DB
+        save_file_to_db(target_user_id, file_path)
+        
+        # Original File metadata registration
+        save_user_file(target_user_id, file_name, file_type)
+        
+        script_key = f"{target_user_id}_{file_name}"
+        is_running = is_bot_running(target_user_id, file_name)
+        restart_status = ""
+        if is_running:
+            process_info = bot_scripts.get(script_key)
+            if process_info:
+                kill_process_tree(process_info)
+                del bot_scripts[script_key]
+            time.sleep(1)
+            if file_type == 'py':
+                threading.Thread(target=run_script, args=(file_path, target_user_id, user_folder, file_name, message)).start()
+            elif file_type == 'js':
+                threading.Thread(target=run_js_script, args=(file_path, target_user_id, user_folder, file_name, message)).start()
+            restart_status = "\n\n🔄 Bot has been restarted automatically with the new code!"
+        
+        bot.reply_to(message, f"✅ Code for `{file_name}` edited successfully!{restart_status}", parse_mode='Markdown')
+        
+    except Exception as e:
+        bot.reply_to(message, f"❌ Failed to edit file. Error: {e}")
 
 # --- Direct Callback Mapping Routing Hub ---
 @bot.callback_query_handler(func=lambda call: True) 
@@ -2529,9 +3419,12 @@ def handle_callbacks(call):
         elif data.startswith('admin_pkg_limit_'): admin_required_callback(call, admin_pkg_limit_callback)
         elif data == 'admin_pkg_add_init': admin_required_callback(call, admin_pkg_add_init_callback)
         elif data == 'admin_toggle_sales': admin_required_callback(call, admin_toggle_sales_callback)
+        elif data == 'admin_toggle_recharge': admin_required_callback(call, admin_toggle_recharge_callback)
         elif data.startswith('stop_current_bot_') or data.startswith('stop_and_replace_menu_'): stop_current_bot_callback(call)
         elif data.startswith('delete_current_bot_') or data.startswith('delete_and_replace_menu_'): delete_current_bot_callback(call)
         elif data.startswith('replace_current_bot_direct_'): replace_current_bot_direct_callback(call)
+        elif data.startswith('adm_viewcode_'): adm_viewcode_callback(call)
+        elif data.startswith('adm_editcode_'): adm_editcode_callback(call)
         elif data == 'back_to_my_bot':
             bot.answer_callback_query(call.id)
             show_my_bot_status(call.message.chat.id, call.from_user.id, call.message.message_id)
@@ -2545,10 +3438,10 @@ BUTTON_TEXT_TO_LOGIC = {
     "🛍️ Products": lambda m: show_products_list(m, m.from_user.id),
     "💵 Balance": _logic_balance_packages,
     "💵 Recharge": lambda m: recharge_balance_command(m),
-    "🚀 Deploy Bot": _logic_check_files,
+    "🚀 Deploy Bot": lambda m: _logic_check_files(m, sender_id=m.from_user.id),
     "🤖 My Bot": _logic_my_bot,
-    "⚡ Bot Speed": _logic_bot_speed,
-    "📊 Statistics": _logic_statistics,
+    "⚡ Bot Speed": lambda m: _logic_bot_speed(m, sender_id=m.from_user.id),
+    "📊 Statistics": lambda m: _logic_statistics(m, sender_id=m.from_user.id),
     "👑 Admin Panel": _logic_admin_panel,
     "📞 Help & Support": _logic_contact_owner
 }
@@ -2562,11 +3455,11 @@ def handle_button_text(message):
 @bot.message_handler(commands=['start'])
 def command_start(message): _logic_send_welcome(message)
 @bot.message_handler(commands=['uploadfile'])
-def command_upload_file(message): _logic_upload_file(message)
+def command_upload_file(message): _logic_upload_file(message, sender_id=message.from_user.id)
 @bot.message_handler(commands=['checkfiles'])
-def command_check_files(message): _logic_check_files(message)
+def command_check_files(message): _logic_check_files(message, sender_id=message.from_user.id)
 @bot.message_handler(commands=['botspeed'])
-def command_bot_speed(message): _logic_bot_speed(message)
+def command_bot_speed(message): _logic_bot_speed(message, sender_id=message.from_user.id)
 @bot.message_handler(commands=['sendcommand'])
 def command_send_command(message): _logic_send_command(message)
 @bot.message_handler(commands=['contactowner'])
@@ -2574,15 +3467,28 @@ def command_contact_owner(message): _logic_contact_owner(message)
 @bot.message_handler(commands=['subscriptions'])
 def command_subscriptions(message): _logic_subscriptions_panel(message)
 @bot.message_handler(commands=['statistics'])
-def command_statistics(message): _logic_statistics(message)
+def command_statistics(message): _logic_statistics(message, sender_id=message.from_user.id)
 @bot.message_handler(commands=['broadcast'])
-def command_broadcast(message): _logic_broadcast_init(message)
+def command_broadcast(message): _logic_broadcast_init(message, sender_id=message.from_user.id)
 @bot.message_handler(commands=['lockbot']) 
 def command_lock_bot(message): _logic_toggle_lock_bot(message)
 @bot.message_handler(commands=['adminpanel'])
 def command_admin_panel(message): _logic_admin_panel(message)
 @bot.message_handler(commands=['runningallcode'])
 def command_run_all_code(message): _logic_run_all_scripts(message)
+@bot.message_handler(commands=['restart'])
+def command_restart_main(message):
+    user_id = message.from_user.id
+    if user_id != OWNER_ID:
+        bot.reply_to(message, "⚠️ Only the Owner can restart the main bot.")
+        return
+    
+    bot.reply_to(message, "🔄 *Restarting main bot server...* Please wait.", parse_mode='Markdown')
+    logger.warning("Restart command received. Performing graceful shutdown and restart.")
+    
+    cleanup()
+    
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 @bot.message_handler(commands=['ping'])
 def ping(message):
