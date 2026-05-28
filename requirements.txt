@@ -1,4 +1,4 @@
-pyTelegramBotAPI
-Flask
-psutil
-psycopg2-binary
+Flask==3.1.2
+psutil==7.1.3
+pyTelegramBotAPI==4.29.1
+Requests==2.32.5
