@@ -45,11 +45,13 @@ import ast       # Added for dynamic auto-dependency parser
 TOKEN = '8957896268:AAFGTYeNWNp9oVTr4iD-caZsDIP-Bkocpbs' 
 OWNER_ID = 5409553122
 ADMIN_ID = 5409553122
-YOUR_USERNAME = '@NETBOLDNETMAIR0'
-UPDATE_CHANNEL = 'https://t.me/MinoXofficial0'
+YOUR_USERNAME = '@rahi455'
+UPDATE_CHANNEL = 'https://t.me/rmmethodzone'
+PUBLISH_KEY = 'sb_publishable_zwGjTMh24BKyrA_MCdxLIg_97IAOXnp'
 
 # --- SUPABASE POSTGRESQL CONNECTION ---
-DB_URI = "postgresql://postgres.fibtevgziehnsyylfmhr:Minhazsarkar44%40@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres"
+# পাসওয়ার্ডে থাকা বিশেষ চিহ্নগুলো (@ -> %40, # -> %23) ইউআরএল-এনকোড করা হয়েছে কানেকশন ঠিক রাখতে।
+DB_URI = "postgresql://postgres:Rahin12%40%40%23%23@db.gcgxxhwkehwtdoeilbah.supabase.co:5432/postgres"
 
 # Folder setup - using absolute paths
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
